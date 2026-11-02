@@ -13,6 +13,37 @@ python -m soup.run --config config/tier_s.yaml --bench
 
 Useful flags: `--log metrics.jsonl` (per-epoch metrics), `--snapshot-every 100` (image sequence), `--device cpu|cuda`, `--seed N`.
 
+## Viewer
+
+```bash
+python -m render.viewer --config config/tier_s.yaml           # interactive window
+python -m render.viewer --video soup.mp4 --frames 1800 --size 1920x1080 --warmup 1000
+python -m render.viewer --headless frames/ --frames 300        # PNG sequence
+```
+
+| Input | Action |
+|---|---|
+| mouse wheel / drag | zoom at cursor / pan |
+| click / Esc | inspect organism (nearest within 3 cells) / clear |
+| space / `.` | pause / single tick |
+| `[` `]` | halve / double ticks per frame |
+| `1`–`6` | lineage, energy, morphogens, genome distance, heat/light, lineage depth |
+| `H` `C` `G` | toggle heat / token cost / gene transfer live |
+| `F` / `S` / `B` / `O` | fit view / snapshot PNG / bloom / HUD |
+
+**What you're seeing:**
+- **Hue** is the lineage colour, taken from the ribosome's genome embedding, so similar genomes get similar colours.
+- **Brightness** is energy.
+- **Texture inside a body** comes from the cells' hidden state.
+- **Borders:** bright membranes separate lineages, and faint lines separate sibling organisms (visible when zoomed in).
+- **Flashes:** gold-white is a gene transfer, cold-blue is heat damage, and white pops are spores.
+- **Orange embers** in empty space show heat.
+- **The inspector** shows the genome as 64 tiles: pads are grey, and spliced-in tokens have gold outlines.
+
+The headless modes need EGL; the window needs a display. Tier S/M copy world state to textures each frame. At Tier L that copy is the bottleneck, and CUDA-GL interop would remove it.
+
+![Viewer](docs/m4_viewer.png)
+
 ## Layout
 
 ```
@@ -26,7 +57,11 @@ soup/
   metrics.py   population/diversity/compression metrics, phenotype smoothness
   run.py       headless runner + benchmark
 render/
-  snapshot.py  PNG renderer (OKLCH lineage colour, membranes, heat speckle)
+  viewer.py    glfw window, input, HUD/inspector; headless PNG / ffmpeg video
+  gpu.py       moderngl renderer: textures, view modes, bloom, flashes
+  shaders.py   GLSL (OKLCH colour, membranes, embers, tonemap)
+  overlay.py   HUD + inspector (genome ribbon) drawn with Pillow
+  snapshot.py  simple CPU PNG renderer (no GL needed)
 ```
 
 ## Status
@@ -43,7 +78,8 @@ render/
   - With 2 seeds: **gene transfer + token cost together** give about 2.5× the organisms and Shannon ≈ 5, vs. ≤ 3.6 for any other combination.
   - The string version beats the direct-weight control on diversity and lineage depth.
   - Heat on code shows no adaptive signature yet.
-- **Next:** a heat-strength sweep, more seeds on the GPU, and then the viewer (M4).
+- **M4 viewer:** done (see below).
+- **Next:** a heat-strength sweep, more seeds on the GPU.
 
 Calibration tools:
 

@@ -67,6 +67,11 @@ class World:
         # last epoch's events, for analysis and render flashes
         self.last_heat_hit = torch.zeros(S, dtype=torch.bool, device=dev)
         self.last_hgt_pos = torch.zeros(0, dtype=torch.long, device=dev)
+        self.last_hgt = (self.last_hgt_pos, self.last_hgt_pos)      # (recipient, donor) slots
+        self.last_spore_pos = torch.zeros(0, dtype=torch.long, device=dev)  # this tick
+        # per-token "came from a splice" mask (string mode), for the inspector ribbon.
+        # Copied to spores as-is, so indels make it approximate.
+        self.spliced = torch.zeros(S, Lg, dtype=torch.bool, device=dev)
 
         H, W = self.H, self.W
         self.gid = torch.full((H, W), -1, dtype=torch.long, device=dev)
@@ -136,6 +141,7 @@ class World:
         self.gid.view(-1)[pos] = slots
         self.energy.view(-1)[pos] = ic.energy
         self.has_hgt[slots] = False
+        self.spliced[slots] = False
         self.translate_dirty()
         if self.direct:
             self.trait_logit[slots] = torch.logit(self.traits[slots].clamp(1e-4, 1 - 1e-4))
@@ -175,6 +181,7 @@ class World:
             self.heat = self.heat_field.at(self.tick_count)
 
         idx = (self.gid.view(-1) >= 0).nonzero().flatten()
+        self.last_spore_pos = idx[:0]
         if idx.numel() > 0:
             self._cells_step(idx)
         self._diffuse_morph()
@@ -256,6 +263,7 @@ class World:
                         cfg.alphabet, self.cpu_gen).to(self.device)
                     self.dirty[slots] = True
                 self.has_hgt[slots] = self.has_hgt[parents]
+                self.spliced[slots] = self.spliced[parents]
                 self.parent[slots] = parents
                 self.depth[slots] = self.depth[parents] + 1
                 self.root[slots] = self.root[parents]
@@ -266,6 +274,8 @@ class World:
                 gid_f[dst] = slots
                 st_f[:, dst] = 0
                 self.counters["spores"] += spore.numel()
+
+        self.last_spore_pos = tgt[spore]
 
         # attack: contest energy * (1 + aggression); winner takes cell + share of energy
         if attack.numel():
@@ -401,6 +411,7 @@ class World:
         rg, dg, pos = self.border_pairs()
         if rg.numel() == 0:
             self.last_hgt_pos = pos
+            self.last_hgt = (rg, dg)
             return 0
         pick = torch.randperm(rg.numel(), generator=self.gen, device=self.device)
         pick = pick[: hc.samples_per_epoch]
@@ -421,6 +432,7 @@ class World:
             else:
                 slots = torch.unique(torch.cat([rg, dg]))
                 rows = {s: row for s, row in zip(slots.tolist(), self.genomes[slots].cpu())}
+                marks = []
                 for r, d, k, (a, b) in zip(rg.tolist(), dg.tolist(), ks, u):
                     donor = rows[d]
                     nz = (donor != genome.PAD).nonzero().flatten()
@@ -431,12 +443,16 @@ class World:
                     rec = rows[r].clone()
                     rec[dst:dst + k] = donor[src:src + k]
                     rows[r] = rec
+                    marks.append((r, dst, k))
                 upd = torch.unique(rg)
                 self.genomes[upd] = torch.stack([rows[s] for s in upd.tolist()]).to(self.device)
+                for r, dst, k in marks:
+                    self.spliced[r, dst:dst + k] = True
                 self.dirty[upd] = True
             self.has_hgt[rg] = True
             self.counters["hgt"] += n
         self.last_hgt_pos = pos
+        self.last_hgt = (rg, dg)
         return n
 
     def slot_counts(self) -> torch.Tensor:
@@ -451,6 +467,7 @@ class World:
             self.genomes[empty] = 0
             self.dirty[empty] = False
             self.has_hgt[empty] = False
+            self.spliced[empty] = False
         return n
 
     def run(self, ticks: int) -> None:

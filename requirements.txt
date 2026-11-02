@@ -3,3 +3,6 @@ numpy
 pyyaml
 pytest
 matplotlib
+moderngl
+glfw
+Pillow
