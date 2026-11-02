@@ -78,7 +78,7 @@ def main() -> None:
         keys.append(k)
         values.append([json.loads(v) for v in vs.split(",")])
 
-    cols = ["occupancy", "organisms", "lineages", "mean_energy", "mean_depth", "mean_len",
+    cols = ["occupancy", "organisms", "mean_org_size", "lineages", "mean_energy", "mean_depth", "mean_len", "hgt_frac",
             "spores_per_tick", "turnover", "attacks_won_per_tick"]
     print("  ".join(keys + cols))
     for combo in itertools.product(*values) if values else [()]:

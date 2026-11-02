@@ -38,13 +38,22 @@ render/
   - Spore thresholds were lowered so reproduction happens.
   - **α raised from 0.5 to 6.** At 0.5 the genome had almost no effect on fitness (heritability r ≈ 0.05). At 6, r ≈ 0.48, 54% of random strings are viable, and phenotype smoothness is 12%.
   - In a 4096-tick run, lineages drop from 256 to 51 and mean genome length shrinks from 32 to 28.
-- **Next (M3):** heat damage and HGT (marked `TODO(M3)` in `World.epoch`), then the ablation grid. Attack churn also needs tuning.
+- **M3 three features + ablation:** done. See [`docs/m3_features.md`](docs/m3_features.md).
+  - Heat damage, gene transfer, and a matched direct-weight control (`mode: direct`) are built.
+  - With 2 seeds: **gene transfer + token cost together** give about 2.5× the organisms and Shannon ≈ 5, vs. ≤ 3.6 for any other combination.
+  - The string version beats the direct-weight control on diversity and lineage depth.
+  - Heat on code shows no adaptive signature yet.
+- **Next:** a heat-strength sweep, more seeds on the GPU, and then the viewer (M4).
 
 Calibration tools:
 
 ```bash
 python -m experiments.sweep --set energy.crowding=0.5,0.9 --set energy.photo=0.08,0.12
 python -m experiments.viability --alpha 2,6,8
+python -m experiments.ablation --out runs/ablation --ticks 8192 --seeds 1,2 --procs 4
+python -m experiments.plot_ablation runs/ablation docs/m3_ablation.png
 ```
+
+![Ablation time series](docs/m3_ablation.png)
 
 ![Tier S after 4096 ticks](docs/m2_snapshot.png)

@@ -29,8 +29,9 @@ DEFAULTS: dict[str, Any] = {
     },
     "init": {"founders": 256, "genome_len": 32, "energy": 0.5},
     "mutation": {"p_sub": 0.01, "p_indel": 0.003, "p_dup": 0.002, "p_del": 0.002},
-    "heat": {"base_flip": 2.0e-4},
-    "hgt": {"samples_per_epoch": 4096, "p_hgt": 0.05, "window": [2, 8]},
+    "heat": {"base_flip": 6.0e-3},   # M3: ~1 flip / 10 epochs at heat 0.5, fidelity 0.5
+    # M3: p_hgt 0.05 put a spliced fragment in ~100% of genomes within 1k ticks
+    "hgt": {"samples_per_epoch": 4096, "p_hgt": 0.005, "window": [2, 8]},
     "energy": {
         "photo": 0.12,          # income = photo * light * (1 - crowding * occupied_frac)
         "crowding": 0.9,        # M2: 0.5 saturates the grid (~98% full, no turnover)
@@ -44,6 +45,7 @@ DEFAULTS: dict[str, Any] = {
         "spore_min": 0.1,       # spore threshold = spore_min + spore_span * trait
         "spore_span": 0.4,      # M2: mean energy settles ~0.3, so thresholds must sit below it
         "attack_cost": 0.02,
+        "attack_min": 0.3,      # attacker needs energy above this (M3: halves conquest churn)
         "loot": 0.5,
     },
     "dynamics": {
@@ -56,6 +58,15 @@ DEFAULTS: dict[str, Any] = {
         "light_drift": 0.002, "heat_drift": 0.001, "light_contrast": 6.0,
     },
     "features": {"heat": True, "cost": True, "hgt": True},
+    "mode": "string",          # string | direct (control: weights mutated directly)
+    "direct": {
+        # matched to string mode at alpha=6 (M3): 34% of spores carry a change; when
+        # they do, mean relative weight change 0.144 and trait-logit sd 0.133
+        "p_mut": 0.343,
+        "sigma_rel": 0.144,
+        "sigma_trait": 0.133,
+        "flip_rel": 0.116,     # relative kick per heat "flip" (= single-token smoothness)
+    },
 }
 
 

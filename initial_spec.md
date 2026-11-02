@@ -332,7 +332,7 @@ seed: 1
 - [x] **M0 — Literature check (½ day).** Done, see `docs/m0_literature.md`. Search for prior work on string-genome → hypernetwork → cellular body systems with in-world code damage and splicing (Tierra, Avida, Lenia/Flow-Lenia, Neural CA, HyperNEAT/HyperNCA, "computational life" self-replicator soups). Update the "why new" claim honestly.
 - [x] **M1 — Tier S skeleton (PyTorch).** World, cell net with a hand-set genome, light/heat fields, one benchmark of ticks/s. Done; see README for first numbers.
 - [x] **M2 — Evolution.** Spores, mutation, slot allocation/GC, attack. Calibrate for survival and coexistence. Run the viability scan: what fraction of random strings produce a living organism? Done, see `docs/m2_calibration.md`. Note that α = 0.5 (section 3.2) proved far too small; the default is now 6.
-- [ ] **M3 — Three features.** Heat, token cost, HGT, `fidelity`/`permeability` traits. Run the ablation grid at Tier S.
+- [x] **M3 — Three features.** Heat, token cost, HGT, `fidelity`/`permeability` traits. Run the ablation grid at Tier S. Done, see `docs/m3_features.md`. Changes from this spec: heat only hits non-pad tokens; `base_flip` 6e-3, `p_hgt` 0.005; "cost off" means a flat cost, not zero.
 - [ ] **M4 — Viewer v1.** Lineage colouring, membranes, heat shimmer, HUD, inspector with genome ribbon.
 - [ ] **M5 — Polish.** Bloom/tonemap, event flashes, view modes, capture pipeline.
 - [ ] **M6 — Fused kernel.** Tile-based Triton/CUDA tick, hit Tier M target, then Tier L.

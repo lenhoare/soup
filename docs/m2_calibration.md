@@ -27,6 +27,17 @@ Mean energy then settles at about 0.3, below the old spore threshold range (0.3�
 
 (`spore_span 0.4` throughout.) **Chosen: `spore_min 0.1`, `spore_span 0.4`, `spore_energy 0.2`.**
 
+> **Correction (found in M3):** a bug in `World.seed_founders` meant founders started with **zero energy and untranslated (all-zero) weights** until the first epoch (tick 32). All M2 numbers below were measured with this bug. After the fix I re-ran the α scan (heat/HGT off for heritability):
+>
+> | α | viable | smoothness | genome r | position r |
+> |---|---|---|---|---|
+> | 2 | 0.86 | 0.099 | 0.07 | 0.96 |
+> | 4 | 0.78 | 0.112 | 0.27 | 0.63 |
+> | **6** | **0.59** | **0.116** | **0.57** | **0.20** |
+> | 8 | 0.46 | 0.117 | 0.62 | 0.05 |
+>
+> The conclusion holds (and is stronger): α = 6 is the right default.
+
 ## 2. α: does the genome actually matter?
 
 The viability scan places 256 random-genome founders on a lattice (spacing 32) and runs 128 ticks. A genome is *viable* if its lineage has ≥ 16 cells at the end.

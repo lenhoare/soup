@@ -155,6 +155,56 @@ def test_viability_scan_smoke():
     assert 0 <= r["viable_frac"] <= 1
 
 
+def test_founders_start_with_energy_and_weights():
+    w = World(small_cfg())
+    pos = w.seed_founders()
+    assert torch.allclose(w.energy.view(-1)[pos], torch.tensor(0.5))
+    assert (w.weights[w.slot_alive].abs().sum(1) > 0).all()
+    assert not w.dirty.any()
+
+
+def test_heat_damage_flips_tokens_and_marks_dirty():
+    w = World(small_cfg(heat={"base_flip": 1.0}))
+    w.seed_founders()
+    w.heat.fill_(1.0)
+    w.traits[:, 0] = 0.0          # no fidelity
+    before = w.genomes.clone()
+    n = w.heat_damage()
+    assert n > 0
+    changed = (w.genomes != before).any(1)
+    assert torch.equal(changed, w.last_heat_hit)
+    assert w.dirty[changed].all()
+    # fidelity 1 blocks all damage
+    w.traits[:, 0] = 1.0
+    assert w.heat_damage() == 0
+
+
+def test_gene_transfer_copies_donor_window():
+    w = World(small_cfg(hgt={"p_hgt": 1.0, "samples_per_epoch": 1, "window": [4, 4]}))
+    g = torch.zeros(2, 64, dtype=torch.uint8)
+    g[0, :8] = 1
+    g[1, :8] = 2
+    w.seed_founders(genomes=g, positions=torch.tensor([0, 1]))
+    w.traits[:, 1] = 1.0          # fully permeable
+    assert w.gene_transfer() == 1
+    rec = int(w.has_hgt.nonzero()[0])
+    own_tok = int(g[0, 0]) if rec == int(w.gid.view(-1)[0]) else int(g[1, 0])
+    donor_tok = 3 - own_tok
+    assert int((w.genomes[rec] == donor_tok).sum()) == 4
+    assert w.dirty[rec]
+
+
+def test_direct_mode_runs_without_translation():
+    w = World(small_cfg(mode="direct", energy={"spore_min": 0.0, "spore_span": 0.0},
+                        heat={"base_flip": 0.5}, hgt={"p_hgt": 1.0}))
+    w.seed_founders()
+    w.ribosome = None              # must never be needed after founding
+    w.run(40)
+    assert w.counters["spores"] > 0
+    assert w.counters["hgt"] > 0 and w.counters["heat_flips"] > 0
+    assert torch.isfinite(w.weights).all()
+
+
 def test_slots_freed_when_empty():
     w = World(small_cfg())
     w.seed_founders()

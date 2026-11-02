@@ -14,7 +14,8 @@ from . import cellnet, genome
 from .cellnet import ATTACK, GROW, SPORE, CellNetLayout
 from .config import Config, resolve_device, resolve_dtype
 from .fields import DriftingField
-from .ribosome import AGGRESSION, EMBED_DIM, FIDELITY, SPORE_THRESHOLD, TRAITS, Ribosome
+from .ribosome import (AGGRESSION, EMBED_DIM, FIDELITY, PERMEABILITY, SPORE_THRESHOLD, TRAITS,
+                       Ribosome)
 
 # direction order matches the net's direction logits: N, E, S, W  (d_row, d_col)
 DIRS = torch.tensor([[-1, 0], [0, 1], [1, 0], [0, -1]])
@@ -58,6 +59,14 @@ class World:
         # lineage id: unique per founder, inherited by spores (slot ids get recycled)
         self.root = torch.full((S,), -1, dtype=torch.long, device=dev)
         self.next_root = 0
+        self.has_hgt = torch.zeros(S, dtype=torch.bool, device=dev)  # carries a spliced fragment
+        # control condition (spec 8.1): weights evolve directly, no strings/ribosome
+        # after founding. Founders are still translated so both conditions start alike.
+        self.direct = cfg.mode == "direct"
+        self.trait_logit = torch.zeros(S, len(TRAITS), device=dev)
+        # last epoch's events, for analysis and render flashes
+        self.last_heat_hit = torch.zeros(S, dtype=torch.bool, device=dev)
+        self.last_hgt_pos = torch.zeros(0, dtype=torch.long, device=dev)
 
         H, W = self.H, self.W
         self.gid = torch.full((H, W), -1, dtype=torch.long, device=dev)
@@ -79,7 +88,7 @@ class World:
         self.dirs = DIRS.to(dev)
         self.tick_count = 0
         self.counters = {"births": 0, "spores": 0, "attacks_won": 0, "deaths": 0,
-                         "spores_blocked": 0}
+                         "spores_blocked": 0, "heat_flips": 0, "heat_hits": 0, "hgt": 0}
 
     # ------------------------------------------------------------------ slots
     def alloc_slots(self, n: int) -> torch.Tensor:
@@ -125,9 +134,13 @@ class World:
                                         device=self.device)
         self.next_root += slots.numel()
         self.gid.view(-1)[pos] = slots
-        return pos
         self.energy.view(-1)[pos] = ic.energy
+        self.has_hgt[slots] = False
         self.translate_dirty()
+        if self.direct:
+            self.trait_logit[slots] = torch.logit(self.traits[slots].clamp(1e-4, 1 - 1e-4))
+            self.glen[slots] = float(ic.genome_len)   # constant token cost in control
+        return pos
 
     # ------------------------------------------------------------------ tick
     def _rand(self, *shape: int) -> torch.Tensor:
@@ -211,8 +224,8 @@ class World:
         births = self._winners(want_birth.nonzero().flatten(), tgt, prio)
         grow = births[action[births] == GROW]
         spore = births[action[births] == SPORE]
-        attack = self._winners(((action == ATTACK) & ~empty_t & (tg != g)).nonzero().flatten(),
-                               tgt, prio)
+        want_attack = (action == ATTACK) & ~empty_t & (tg != g) & (E > ec.attack_min)
+        attack = self._winners(want_attack.nonzero().flatten(), tgt, prio)
 
         new_E = en_f.clone()
         attacked = torch.zeros(HW, dtype=torch.bool, device=self.device)
@@ -234,11 +247,15 @@ class World:
             spore = spore[: slots.numel()]
             if spore.numel():
                 parents = g[spore]
-                mc = cfg.mutation
-                self.genomes[slots] = genome.mutate(
-                    self.genomes[parents].cpu(), mc.p_sub, mc.p_indel, mc.p_dup, mc.p_del,
-                    cfg.alphabet, self.cpu_gen).to(self.device)
-                self.dirty[slots] = True
+                if self.direct:
+                    self._direct_mutate(slots, parents)
+                else:
+                    mc = cfg.mutation
+                    self.genomes[slots] = genome.mutate(
+                        self.genomes[parents].cpu(), mc.p_sub, mc.p_indel, mc.p_dup, mc.p_del,
+                        cfg.alphabet, self.cpu_gen).to(self.device)
+                    self.dirty[slots] = True
+                self.has_hgt[slots] = self.has_hgt[parents]
                 self.parent[slots] = parents
                 self.depth[slots] = self.depth[parents] + 1
                 self.root[slots] = self.root[parents]
@@ -275,6 +292,10 @@ class World:
         cost = ec.basal + ec.c_fid * self.traits[lg, FIDELITY]
         if cfg.features.cost:
             cost = cost + ec.c_tok * self.glen[lg]
+        else:
+            # same energy budget, no length dependence (M3: a zero cost confounded the
+            # ablation by making everyone far richer)
+            cost = cost + ec.c_tok * cfg.init.genome_len
         new_E[live] = (new_E[live] + income - cost).clamp(0, 1)
 
         # ---- death
@@ -296,13 +317,127 @@ class World:
                + torch.roll(m, -1, 2) - 4 * m)
         self.morph = (m + dc.morph_diffuse * lap) * (1 - dc.morph_decay)
 
+    # ------------------------------------------------------------------ control
+    def _randn(self, *shape: int) -> torch.Tensor:
+        return torch.randn(shape, generator=self.gen, device=self.device)
+
+    def _kick_weights(self, slots: torch.Tensor, rel: torch.Tensor) -> None:
+        """Direct mode: add Gaussian noise of relative size `rel` (per slot) to weights."""
+        w = self.weights[slots].float()
+        sig = rel.view(-1, 1) * w.norm(dim=1, keepdim=True) / w.shape[1] ** 0.5
+        self.weights[slots] = (w + sig * self._randn(*w.shape)).to(self.dtype)
+
+    def _direct_mutate(self, slots: torch.Tensor, parents: torch.Tensor) -> None:
+        dc = self.cfg.direct
+        self.weights[slots] = self.weights[parents]
+        self.trait_logit[slots] = self.trait_logit[parents]
+        mut = slots[self._rand(slots.numel()) < dc.p_mut]
+        if mut.numel():
+            self._kick_weights(mut, torch.full((mut.numel(),), dc.sigma_rel, device=self.device))
+            self.trait_logit[mut] += dc.sigma_trait * self._randn(mut.numel(), len(TRAITS))
+        self.traits[slots] = torch.sigmoid(self.trait_logit[slots])
+        self.embed[slots] = self.embed[parents]
+        self.glen[slots] = self.glen[parents]
+
     # ------------------------------------------------------------------ epoch
     def epoch(self) -> None:
-        """Every `epoch_ticks`: (M3: heat damage, HGT), translate dirty, free empty slots."""
-        # TODO(M3): heat damage to genome strings (cfg.features.heat)
-        # TODO(M3): horizontal gene transfer on border pairs (cfg.features.hgt)
+        """Every `epoch_ticks`: heat damage, HGT, translate dirty, free empty slots."""
+        f = self.cfg.features
+        if f.heat:
+            self.heat_damage()
+        if f.hgt:
+            self.gene_transfer()
         self.translate_dirty()
         self.free_empty_slots()
+
+    def heat_damage(self) -> int:
+        """Each non-pad token of each live genome flips with
+        p = base_flip * mean_heat * (1 - fidelity), to any other symbol (pad included, so
+        heat can delete). Pads are not hit: flipping them would make heat mostly *insert*
+        code (M3 found this inflated genomes). The whole organism is hit at once."""
+        S, Lg, A = self.cfg.genome_slots, self.cfg.genome_len, self.cfg.alphabet
+        alive = self.gid >= 0
+        g = self.gid[alive]
+        cnt = torch.bincount(g, minlength=S).float()
+        mean_h = torch.bincount(g, weights=self.heat[alive], minlength=S) / cnt.clamp(min=1)
+        p = self.cfg.heat.base_flip * mean_h * (1 - self.traits[:, FIDELITY]) * (cnt > 0)
+        if self.direct:
+            n = torch.poisson(p * self.glen, generator=self.gen)
+            hit = n > 0
+            if hit.any():
+                s = hit.nonzero().flatten()
+                self._kick_weights(s, self.cfg.direct.flip_rel * n[s].sqrt())
+            n_flips = int(n.sum())
+        else:
+            flips = (self._rand(S, Lg) < p[:, None]) & (self.genomes != genome.PAD)
+            hit = flips.any(1)
+            if hit.any():
+                off = torch.randint(1, A, (S, Lg), generator=self.gen, device=self.device,
+                                    dtype=torch.uint8)
+                self.genomes = torch.where(flips, (self.genomes + off) % A, self.genomes)
+                self.dirty |= hit
+            n_flips = int(flips.sum())
+        self.last_heat_hit = hit
+        self.counters["heat_flips"] += n_flips
+        self.counters["heat_hits"] += int(hit.sum())
+        return n_flips
+
+    def border_pairs(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """All (recipient gid, donor gid, recipient flat pos) over 4-neighbour borders."""
+        rs, ds, ps = [], [], []
+        alive = self.gid >= 0
+        for dy, dx in ((0, 1), (1, 0), (0, -1), (-1, 0)):
+            n = torch.roll(self.gid, (dy, dx), (0, 1))
+            m = alive & (n >= 0) & (n != self.gid)
+            rs.append(self.gid[m])
+            ds.append(n[m])
+            ps.append(m.view(-1).nonzero().flatten())
+        return torch.cat(rs), torch.cat(ds), torch.cat(ps)
+
+    def gene_transfer(self) -> int:
+        """Spec 4.1: sample border pairs; with p_hgt * permeability(recipient) copy a
+        k-token window (starting at a non-pad donor token) into the recipient string."""
+        hc, Lg = self.cfg.hgt, self.cfg.genome_len
+        rg, dg, pos = self.border_pairs()
+        if rg.numel() == 0:
+            self.last_hgt_pos = pos
+            return 0
+        pick = torch.randperm(rg.numel(), generator=self.gen, device=self.device)
+        pick = pick[: hc.samples_per_epoch]
+        rg, dg, pos = rg[pick], dg[pick], pos[pick]
+        ok = self._rand(rg.numel()) < hc.p_hgt * self.traits[rg, PERMEABILITY]
+        rg, dg, pos = rg[ok], dg[ok], pos[ok]
+        n = rg.numel()
+        if n:
+            kmin, kmax = hc.window
+            ks = torch.randint(kmin, kmax + 1, (n,), generator=self.cpu_gen).tolist()
+            u = torch.rand(n, 2, generator=self.cpu_gen).tolist()
+            if self.direct:
+                P = self.layout.n_params
+                for r, d, k, (a, _) in zip(rg.tolist(), dg.tolist(), ks, u):
+                    blk = max(1, P * k // Lg)
+                    o = int(a * (P - blk + 1))
+                    self.weights[r, o:o + blk] = self.weights[d, o:o + blk]
+            else:
+                slots = torch.unique(torch.cat([rg, dg]))
+                rows = {s: row for s, row in zip(slots.tolist(), self.genomes[slots].cpu())}
+                for r, d, k, (a, b) in zip(rg.tolist(), dg.tolist(), ks, u):
+                    donor = rows[d]
+                    nz = (donor != genome.PAD).nonzero().flatten()
+                    if nz.numel() == 0:
+                        continue
+                    src = min(int(nz[int(a * nz.numel())]), Lg - k)
+                    dst = int(b * (Lg - k + 1))
+                    rec = rows[r].clone()
+                    rec[dst:dst + k] = donor[src:src + k]
+                    rows[r] = rec
+                upd = torch.unique(rg)
+                self.genomes[upd] = torch.stack([rows[s] for s in upd.tolist()]).to(self.device)
+                self.dirty[upd] = True
+            self.has_hgt[rg] = True
+            self.counters["hgt"] += n
+        self.last_hgt_pos = pos
+        return n
 
     def slot_counts(self) -> torch.Tensor:
         g = self.gid[self.gid >= 0]
@@ -315,6 +450,7 @@ class World:
             self.slot_alive[empty] = False
             self.genomes[empty] = 0
             self.dirty[empty] = False
+            self.has_hgt[empty] = False
         return n
 
     def run(self, ticks: int) -> None:

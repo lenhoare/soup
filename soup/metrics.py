@@ -35,6 +35,14 @@ def snapshot(world, tile: int = 16) -> dict:
     tr = (world.traits[live_slots] * w[:, None]).sum(0) / w.sum()
     m.update({f"mean_{name}": float(v) for name, v in zip(TRAITS, tr)})
     m["mean_energy"] = float(world.energy[world.gid >= 0].mean())
+    m["hgt_frac"] = float(world.has_hgt[live_slots].float().mean())
+    m["mean_org_size"] = cells / live_slots.numel()
+    # do hot-region organisms carry higher fidelity? (cell-level correlation)
+    alive = world.gid >= 0
+    fid = world.traits[world.gid[alive], 0]
+    heat = world.heat[alive]
+    if cells > 2 and fid.std() > 0 and heat.std() > 0:
+        m["fid_heat_corr"] = float(torch.corrcoef(torch.stack([fid, heat]))[0, 1])
     m["max_depth"] = int(world.depth[live_slots].max())
     m["genomes_per_tile"] = genomes_per_tile(world.gid, tile)
     m.update(world.counters)
