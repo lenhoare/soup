@@ -32,16 +32,19 @@ render/
 ## Status
 
 - **M0 literature check:** done.
-- **M1 Tier S skeleton:** done. The world, the per-cell nets translated from genomes, the light and heat fields, and the benchmark all work. Grow, spore, attack and rest are implemented, along with slot allocation and freeing (part of M2), but **not yet calibrated**.
-- **Next (M2):** calibrate energy so the grid doesn't saturate, run the viability scan, and tune `alpha` using the phenotype-smoothness metric.
-- **Then (M3):** heat damage and HGT. These are marked `TODO(M3)` in `World.epoch`.
+- **M1 Tier S skeleton:** done.
+- **M2 evolution + calibration:** done. See [`docs/m2_calibration.md`](docs/m2_calibration.md). The key changes:
+  - `crowding 0.9` stops the grid saturating.
+  - Spore thresholds were lowered so reproduction happens.
+  - **α raised from 0.5 to 6.** At 0.5 the genome had almost no effect on fitness (heritability r ≈ 0.05). At 6, r ≈ 0.48, 54% of random strings are viable, and phenotype smoothness is 12%.
+  - In a 4096-tick run, lineages drop from 256 to 51 and mean genome length shrinks from 32 to 28.
+- **Next (M3):** heat damage and HGT (marked `TODO(M3)` in `World.epoch`), then the ablation grid. Attack churn also needs tuning.
 
-First measurements (cloud CPU, 4 threads; not representative of the RTX 3060):
+Calibration tools:
 
-| Measure | Value |
-|---|---|
-| Tier S, ~63k live cells | 6.4 ticks/s |
-| Distinct genomes per 16×16 tile | ~4.6 (good for the M6 tiled kernel) |
-| Phenotype smoothness, α = 0.5 | 4.2% median weight change per single-token mutant (spec target is 5–15%, so α can go up a little) |
+```bash
+python -m experiments.sweep --set energy.crowding=0.5,0.9 --set energy.photo=0.08,0.12
+python -m experiments.viability --alpha 2,6,8
+```
 
-![Tier S after 400 ticks](docs/m1_snapshot.png)
+![Tier S after 4096 ticks](docs/m2_snapshot.png)

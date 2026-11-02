@@ -21,7 +21,8 @@ DEFAULTS: dict[str, Any] = {
     "cell_net": {"hidden": 16, "state_ch": 8, "morph_ch": 4},
     "ribosome": {
         "layers": 2, "d_model": 64, "heads": 4, "mlp_ratio": 2,
-        "alpha": 0.5,          # W = W_base + alpha * dW(genome)
+        "alpha": 6.0,          # W = W_base + alpha * dW(genome). M2: below ~4 the genome
+                               # barely affects fitness; 6 -> 54% viable, smoothness ~12%
         "delta_scale": 1.0,    # scale of dW relative to a unit-variance init
         "frozen": True,
         "seed": 1234,          # fixes the "genetic code" in Phase 1
@@ -32,16 +33,16 @@ DEFAULTS: dict[str, Any] = {
     "hgt": {"samples_per_epoch": 4096, "p_hgt": 0.05, "window": [2, 8]},
     "energy": {
         "photo": 0.12,          # income = photo * light * (1 - crowding * occupied_frac)
-        "crowding": 0.5,
+        "crowding": 0.9,        # M2: 0.5 saturates the grid (~98% full, no turnover)
         "basal": 0.002,
         "c_tok": 0.0004,
         "c_fid": 0.001,
         "grow_threshold": 0.4,
         "grow_cost": 0.02,
         "spore_cost": 0.05,
-        "spore_energy": 0.3,
-        "spore_min": 0.3,       # spore threshold = spore_min + spore_span * trait
-        "spore_span": 0.65,
+        "spore_energy": 0.2,
+        "spore_min": 0.1,       # spore threshold = spore_min + spore_span * trait
+        "spore_span": 0.4,      # M2: mean energy settles ~0.3, so thresholds must sit below it
         "attack_cost": 0.02,
         "loot": 0.5,
     },

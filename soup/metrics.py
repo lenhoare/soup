@@ -15,9 +15,12 @@ def snapshot(world, tile: int = 16) -> dict:
     counts = world.slot_counts()
     live_slots = (counts > 0).nonzero().flatten()
     cells = int(counts.sum())
-    m: dict = {"tick": world.tick_count, "cells": cells, "organisms": live_slots.numel()}
+    m: dict = {"tick": world.tick_count, "cells": cells, "organisms": live_slots.numel(),
+               "occupancy": cells / world.gid.numel()}
     if cells == 0:
         return m
+    m["lineages"] = int(torch.unique(world.root[live_slots]).numel())
+    m["mean_depth"] = float(world.depth[live_slots].float().mean())
     p = counts[live_slots].float() / cells
     m["shannon"] = float(-(p * p.log()).sum())
     g = world.genomes[live_slots]

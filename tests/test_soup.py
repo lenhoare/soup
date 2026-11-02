@@ -133,6 +133,28 @@ def test_spores_create_new_slots_with_parents():
     assert (w.depth[kids] >= 1).all()
 
 
+def test_lineage_root_inherited_by_spores():
+    cfg = small_cfg(energy={"spore_min": 0.0, "spore_span": 0.0})
+    w = World(cfg)
+    w.seed_founders()
+    assert w.root[w.slot_alive].tolist() == list(range(8))
+    w.run(24)
+    live = w.slot_alive.nonzero().flatten()
+    assert (w.root[live] >= 0).all() and (w.root[live] < 8).all()
+    kids = live[w.parent[live] >= 0]
+    # a child's lineage matches its parent's (if the parent slot hasn't been recycled)
+    same = w.slot_alive[w.parent[kids]] & (w.depth[w.parent[kids]] == w.depth[kids] - 1)
+    assert (w.root[kids][same] == w.root[w.parent[kids]][same]).all()
+
+
+def test_viability_scan_smoke():
+    from experiments.viability import lattice, scan
+    assert lattice(64, 64, 32).tolist() == [16 * 64 + 16, 16 * 64 + 48, 48 * 64 + 16, 48 * 64 + 48]
+    cfg = small_cfg(grid=[64, 64])
+    r = scan(cfg, 4, 16, 32, 2, torch.Generator().manual_seed(0))
+    assert 0 <= r["viable_frac"] <= 1
+
+
 def test_slots_freed_when_empty():
     w = World(small_cfg())
     w.seed_founders()

@@ -55,6 +55,9 @@ class World:
         self.parent = torch.full((S,), -1, dtype=torch.long, device=dev)
         self.birth_tick = torch.zeros(S, dtype=torch.long, device=dev)
         self.depth = torch.zeros(S, dtype=torch.long, device=dev)
+        # lineage id: unique per founder, inherited by spores (slot ids get recycled)
+        self.root = torch.full((S,), -1, dtype=torch.long, device=dev)
+        self.next_root = 0
 
         H, W = self.H, self.W
         self.gid = torch.full((H, W), -1, dtype=torch.long, device=dev)
@@ -96,22 +99,33 @@ class World:
         self.dirty[idx] = False
         return idx.numel()
 
-    def seed_founders(self, n: int | None = None, genomes: torch.Tensor | None = None) -> None:
-        """Place founder cells, each with its own new slot, at random empty positions."""
+    def seed_founders(self, n: int | None = None, genomes: torch.Tensor | None = None,
+                      positions: torch.Tensor | None = None) -> torch.Tensor:
+        """Place founder cells, each with its own new slot and lineage, at random empty
+        positions (or at the given flat `positions`). Returns the flat positions used."""
         ic = self.cfg.init
         if genomes is None:
             n = ic.founders if n is None else n
             genomes = genome.random_genomes(n, self.cfg.genome_len, self.cfg.alphabet,
                                             ic.genome_len, self.cpu_gen)
         n = genomes.shape[0]
-        empty = (self.gid.view(-1) < 0).nonzero().flatten()
-        pos = empty[torch.randperm(empty.numel(), generator=self.gen, device=self.device)[:n]]
+        if positions is not None:
+            pos = positions.to(self.device)[:n]
+        else:
+            empty = (self.gid.view(-1) < 0).nonzero().flatten()
+            pos = empty[torch.randperm(empty.numel(), generator=self.gen, device=self.device)[:n]]
         slots = self.alloc_slots(pos.numel())
         pos = pos[: slots.numel()]
         self.genomes[slots] = genomes[: slots.numel()].to(self.device)
         self.dirty[slots] = True
         self.birth_tick[slots] = self.tick_count
+        self.parent[slots] = -1
+        self.depth[slots] = 0
+        self.root[slots] = torch.arange(self.next_root, self.next_root + slots.numel(),
+                                        device=self.device)
+        self.next_root += slots.numel()
         self.gid.view(-1)[pos] = slots
+        return pos
         self.energy.view(-1)[pos] = ic.energy
         self.translate_dirty()
 
@@ -227,6 +241,7 @@ class World:
                 self.dirty[slots] = True
                 self.parent[slots] = parents
                 self.depth[slots] = self.depth[parents] + 1
+                self.root[slots] = self.root[parents]
                 self.birth_tick[slots] = self.tick_count
                 src, dst = idx[spore], tgt[spore]
                 new_E[src] = E[spore] - ec.spore_energy - ec.spore_cost
