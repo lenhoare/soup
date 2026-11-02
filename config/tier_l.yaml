@@ -1,0 +1,5 @@
+# Tier L: showpiece "1M" runs. Target >= 60 ticks/s (fused kernel, M6).
+grid: [1024, 1024]
+genome_slots: 65536
+dtype: float16
+init: {founders: 4096, genome_len: 32}

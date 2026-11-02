@@ -1,0 +1,5 @@
+# Tier M: default experiments. Target >= 200 ticks/s (needs the fused kernel, M6).
+grid: [512, 512]
+genome_slots: 32768
+dtype: float16
+init: {founders: 1024, genome_len: 32}

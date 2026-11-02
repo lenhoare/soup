@@ -16,7 +16,7 @@ The three features we are switching on (all from the design discussion):
 | 2 | **Heat acts on the code** | Thermal noise flips tokens in the string, not just positions | Redundancy, repair, robustness |
 | 3 | **Cost per token** | Maintenance energy scales with non-pad genome length | Compression, reuse, hierarchy |
 
-**Why this might be new:** weight-evolution systems mutate continuous parameters that can't be sensibly spliced; digital-organism systems (Tierra, Avida) evolve programs but have no learned translation layer or spatial body. Here the *meaning of code* is a neural function, genes are transplantable text, and the physical world attacks the text itself. This is a claim from memory, not a literature check. Milestone M0 verifies it.
+**Why this might be new (revised after M0, see `docs/m0_literature.md`):** each ingredient has prior work. Coralai (2024) runs ecosystems of NCA organisms whose genomes (CPPNs) are indirectly encoded. Self-Replicating NCA (2026) evolves per-pixel networks by direct weight mutation, which is essentially our control. Flow-Lenia mixes localized rule parameters between species. Avida's "survival of the flattest" already predicts that high mutation favours robustness. We found no system that **combines** a discrete, spliceable token genome, a shared neural translator, a spatial multi-organism body, in-world damage to the string, and fragment-level gene transfer. The claim is about the combination, and the key test is the direct-weight control in section 8.1.
 
 ---
 
@@ -329,8 +329,8 @@ seed: 1
 
 ## 11. Milestones
 
-- [ ] **M0 — Literature check (½ day).** Search for prior work on string-genome → hypernetwork → cellular body systems with in-world code damage and splicing (Tierra, Avida, Lenia/Flow-Lenia, Neural CA, HyperNEAT/HyperNCA, "computational life" self-replicator soups). Update the "why new" claim honestly.
-- [ ] **M1 — Tier S skeleton (PyTorch).** World, cell net with a hand-set genome, light/heat fields, one benchmark of ticks/s.
+- [x] **M0 — Literature check (½ day).** Done, see `docs/m0_literature.md`. Search for prior work on string-genome → hypernetwork → cellular body systems with in-world code damage and splicing (Tierra, Avida, Lenia/Flow-Lenia, Neural CA, HyperNEAT/HyperNCA, "computational life" self-replicator soups). Update the "why new" claim honestly.
+- [x] **M1 — Tier S skeleton (PyTorch).** World, cell net with a hand-set genome, light/heat fields, one benchmark of ticks/s. Done; see README for first numbers.
 - [ ] **M2 — Evolution.** Spores, mutation, slot allocation/GC, attack. Calibrate for survival and coexistence. Run the viability scan: what fraction of random strings produce a living organism?
 - [ ] **M3 — Three features.** Heat, token cost, HGT, `fidelity`/`permeability` traits. Run the ablation grid at Tier S.
 - [ ] **M4 — Viewer v1.** Lineage colouring, membranes, heat shimmer, HUD, inspector with genome ribbon.
