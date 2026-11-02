@@ -1,0 +1,4 @@
+# Tier S: dev loop, PyTorch eager. Target >= 60 ticks/s on an RTX 3060.
+grid: [256, 256]
+genome_slots: 8192
+init: {founders: 256, genome_len: 32}
