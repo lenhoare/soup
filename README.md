@@ -79,7 +79,10 @@ render/
   - The string version beats the direct-weight control on diversity and lineage depth.
   - Heat on code shows no adaptive signature yet.
 - **M4 viewer:** done (see below).
-- **Next:** a heat-strength sweep, more seeds on the GPU.
+- **Heat follow-up:** see the end of [`docs/m3_features.md`](docs/m3_features.md).
+  - Fidelity is selected down under weak heat and up under strong heat, but never locally (hot vs. cold regions).
+  - Heat damage turns out to be nearly neutral for evolved genomes (about −7% colony size per flip), so selection on fidelity is weak.
+- **Next:** options to make heat matter (listed in the doc), more seeds on the GPU, M5 polish (checkpoints) and M6 (fused kernel).
 
 Calibration tools:
 

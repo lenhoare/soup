@@ -26,11 +26,13 @@ CONDITIONS["control"] = {"features": {"heat": True, "cost": True, "hgt": True}, 
 
 COLS = ["organisms", "lineages", "shannon", "mean_org_size", "mean_len", "zlib_ratio",
         "hgt_frac", "mean_fidelity", "fid_heat_corr", "mean_permeability",
-        "mean_aggression", "mean_energy", "occupancy", "mean_depth"]
+        "mean_aggression", "mean_energy", "occupancy", "mean_depth",
+        "fid_hot_minus_cold", "repeat_frac", "repeat_hot_minus_cold"]
 
 
 def run(job: tuple) -> dict:
-    name, seed, args = job
+    name, seed, args = job[:3]
+    cond = job[3] if len(job) > 3 else CONDITIONS[name]
     import torch
     torch.set_num_threads(args["threads"])
     torch.set_grad_enabled(False)
@@ -39,7 +41,7 @@ def run(job: tuple) -> dict:
     from soup.metrics import snapshot
     from soup.world import World
 
-    over = json.loads(json.dumps(CONDITIONS[name]))
+    over = json.loads(json.dumps(cond))
     over.update({"seed": seed, "grid": [args["grid"], args["grid"]],
                  "init": {"founders": args["founders"]}, "device": "cpu"})
     cfg = load_config(args["config"], over)
@@ -67,7 +69,13 @@ def run(job: tuple) -> dict:
 
 def tail_summary(rows: list[dict]) -> dict:
     tail = rows[-max(1, len(rows) // 4):]
-    return {c: sum(r.get(c, 0.0) for r in tail) / len(tail) for c in COLS}
+    out = {c: sum(r.get(c, 0.0) for r in tail) / len(tail) for c in COLS}
+    # realised damage: heat flips per organism per epoch over the tail
+    if len(tail) > 1 and "heat_flips" in tail[-1]:
+        flips = tail[-1]["heat_flips"] - tail[0]["heat_flips"]
+        orgs = sum(r.get("organisms", 0) for r in tail[1:]) or 1
+        out["flips_per_org_epoch"] = flips / orgs
+    return out
 
 
 def summarize_dir(out: str) -> list[dict]:

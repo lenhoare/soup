@@ -214,6 +214,16 @@ def test_slots_freed_when_empty():
     assert not w.slot_alive.any()
 
 
+def test_repeat_frac():
+    from soup.metrics import repeat_frac
+    g = torch.zeros(3, 16, dtype=torch.uint8)
+    g[0, :8] = torch.tensor([1, 2, 3, 4, 5, 6, 7, 8])        # no repeats
+    g[1, :8] = torch.tensor([1, 2, 3, 4, 1, 2, 3, 4])        # 1234 twice
+    assert repeat_frac(g)[0] == 0
+    assert abs(float(repeat_frac(g)[1]) - 2 / 5) < 1e-6      # 2 of 5 k-mers duplicated
+    assert repeat_frac(g)[2] == 0                             # all pad
+
+
 def test_genomes_per_tile():
     gid = torch.full((32, 32), -1)
     gid[:16, :16] = 3

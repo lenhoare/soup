@@ -43,10 +43,39 @@ def snapshot(world, tile: int = 16) -> dict:
     heat = world.heat[alive]
     if cells > 2 and fid.std() > 0 and heat.std() > 0:
         m["fid_heat_corr"] = float(torch.corrcoef(torch.stack([fid, heat]))[0, 1])
+    # robustness routes, hot vs cold quartile of occupied cells
+    rep = repeat_frac(world.genomes)
+    m["repeat_frac"] = float((rep[live_slots] * w).sum() / w.sum())
+    if cells >= 8:
+        lo, hi = torch.quantile(heat, torch.tensor([0.25, 0.75], device=heat.device))
+        hot, cold = heat >= hi, heat <= lo
+        if hot.any() and cold.any():
+            g = world.gid[alive]
+            m["fid_hot_minus_cold"] = float(fid[hot].mean() - fid[cold].mean())
+            m["repeat_hot_minus_cold"] = float(rep[g[hot]].mean() - rep[g[cold]].mean())
+            m["heat_hot_minus_cold"] = float(heat[hot].mean() - heat[cold].mean())
     m["max_depth"] = int(world.depth[live_slots].max())
     m["genomes_per_tile"] = genomes_per_tile(world.gid, tile)
     m.update(world.counters)
     return m
+
+
+def repeat_frac(genomes: torch.Tensor, k: int = 4) -> torch.Tensor:
+    """Per genome: fraction of its pad-free k-mers that occur more than once in the same
+    genome (a simple redundancy measure: duplicated segments raise it)."""
+    g = genomes.long()
+    n, L = g.shape
+    win = g.unfold(1, k, 1)                                   # (n, L-k+1, k)
+    valid = (win != PAD).all(-1)
+    code = (win * (16 ** torch.arange(k, device=g.device))).sum(-1)
+    code = torch.where(valid, code, -1 - torch.arange(L - k + 1, device=g.device))  # unique
+    s, _ = code.sort(dim=1)
+    eq = s[:, 1:] == s[:, :-1]
+    dup = torch.zeros_like(s, dtype=torch.bool)
+    dup[:, 1:] |= eq
+    dup[:, :-1] |= eq
+    dup &= s >= 0
+    return dup.sum(1).float() / valid.sum(1).clamp(min=1).float()
 
 
 def genomes_per_tile(gid: torch.Tensor, tile: int = 16) -> float:

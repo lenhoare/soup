@@ -83,3 +83,52 @@ Per seed (seed 1 / seed 2), to show how robust each result is:
 - In control, `mean_len` is fixed by construction and `zlib_ratio` is meaningless (genomes are not used after founding).
 - `hgt_frac` is an inherited flag, so it saturates even at low transfer rates. Measuring the fraction of *tokens* that came from splices would say more.
 - Cloud CPU speed limited the run length. A 3060 should make 4–8 seeds at 256×256 cheap.
+
+---
+
+## Follow-up: why doesn't fidelity adapt to heat?
+
+### Heat sweep
+
+7 conditions × 2 seeds, 8192 ticks, 128×128, all features on (`experiments/heat_sweep.py`). It crosses heat strength with a drifting vs. static heat field, plus free fidelity at the strongest heat.
+
+| condition | flips / organism / epoch | mean fidelity | hot − cold fidelity | repeat_frac | organisms |
+|---|---|---|---|---|---|
+| flip 0.006, drift | 0.034 | 0.619 | +0.009 (+0.02 / −0.002) | 0.040 | 759 |
+| flip 0.006, static | 0.037 | 0.592 | −0.003 (−0.019 / +0.013) | 0.030 | 854 |
+| flip 0.03, drift | 0.165 | 0.657 | +0.000 (+0.006 / −0.006) | 0.011 | 510 |
+| flip 0.03, static | 0.176 | 0.652 | +0.009 (+0.014 / +0.003) | 0.021 | 545 |
+| flip 0.1, drift | 0.46 | 0.683 | +0.005 (−0.002 / +0.013) | 0.005 | 508 |
+| flip 0.1, static | 0.47 | 0.670 | −0.011 (−0.010 / −0.011) | 0.009 | 517 |
+| flip 0.1, static, c_fid = 0 | 0.44 | 0.679 | +0.000 (−0.007 / +0.008) | 0.003 | 494 |
+
+(Initial mean fidelity ≈ 0.65. Per-seed values in brackets.)
+
+![Heat sweep](m3_heat_sweep.png)
+
+- **Global response: yes.** Mean fidelity is selected *down* when damage is rare (0.59–0.62, since it costs energy and buys little) and *up* when damage is common (0.67–0.68). Both seeds agree.
+- **Local response: no.** Hot-region organisms never carry more fidelity than cold-region ones (|Δ| ≤ 0.02, sign flips between seeds). This holds whether or not the heat field drifts, so drift is not the cause.
+- **Not cost-limited.** Making fidelity free changes nothing at strong heat (0.68).
+- **Redundancy goes the other way.** Repeated 4-mers get *rarer* as heat rises (4% → 0.3–1%): flips break repeats faster than duplication makes them. Evolution is not using duplication as a repair route here.
+
+### Is heat damage harmful at all?
+
+`experiments/damage_cost.py`: evolve 4096 ticks, take the 128 most abundant genomes, apply k heat-style flips, and grow parents and mutants from single founders in isolation (2 placements each). Paired comparison:
+
+| genomes | k flips | Δ log colony size vs parent | fraction worse |
+|---|---|---|---|
+| evolved | 1 | −0.07 ± 0.06 | 0.55 |
+| evolved | 3 | −0.07 ± 0.10 | 0.51 |
+| random | 1 | +0.07 ± 0.07 | 0.45 |
+| random | 3 | −0.29 ± 0.09 | 0.58 |
+
+**Heat damage is close to neutral for evolved genomes.** One flip costs about 7% of colony size, not distinguishable from zero, and about half of mutants do better than their parents. With damage this cheap, selection on fidelity is weak. That explains the small global response and why no local signal shows above the noise.
+
+Caveat: isolated growth is not competitive fitness. Evolved genomes barely out-grow random ones in this assay (3.50 vs 3.42 log size), so it may understate what damage costs in a crowded world. A competition assay (mutant vs. parent placed side by side) would settle it.
+
+### What would make heat matter (options, not done)
+
+1. **Make the code more fragile.** The smooth genotype→phenotype map (about 12% weight change per token) is good for evolvability but makes damage cheap. Options: a sharper ribosome, or "essential" token positions.
+2. **Make fidelity a stronger lever.** Damage currently scales with `(1 − fidelity)` over a trait range of about 0.5–0.8, only about 2.5× variation. Try `(1 − fidelity)²` or a wider trait range.
+3. **Reduce mixing between heat zones.** A bigger grid relative to heat patches, or heat patches that act as barriers, would give local lineages time to adapt.
+4. **Spec open question 1:** let heat also perturb cell state or energy directly, so hot zones are harsh regardless of the genome.
