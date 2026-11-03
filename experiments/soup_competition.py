@@ -73,6 +73,12 @@ def main() -> None:
     ap.add_argument("--grid", type=int, default=128)
     ap.add_argument("--seeds", default="1,2,3,4")
     ap.add_argument("--procs", type=int, default=4)
+    ap.add_argument("--mode", default="adaptation", choices=["adaptation", "damage"],
+                    help="adaptation: evolved/prescreened vs random; damage: evolved "
+                         "parents vs their own k-flip mutants")
+    ap.add_argument("--compete-over", default="{}",
+                    help="extra JSON overrides for the competition runs only (not evolution)")
+    ap.add_argument("--only", help="comma-separated set labels to run")
     ap.add_argument("--json")
     args = ap.parse_args()
     torch.set_grad_enabled(False)
@@ -84,12 +90,28 @@ def main() -> None:
     rand = genome.random_genomes(args.n, cfg.genome_len, cfg.alphabet, cfg.init.genome_len,
                                  torch.Generator().manual_seed(7), exclude=cfg.ribosome.stop_token)
     deep = evolve_deep(args.config, over, 4096, 128, args.n)
-    good = prescreen(args.config, over, args.n)
-    rand2 = genome.random_genomes(args.n, cfg.genome_len, cfg.alphabet, cfg.init.genome_len,
-                                  torch.Generator().manual_seed(8), exclude=cfg.ribosome.stop_token)
-    sets = [("evolved vs random", deep, rand), ("prescreened vs random", good, rand),
-            ("random vs random (null)", rand2, rand)]
-    jobs = [(lab, a, b, int(s), args.config, over, args.ticks, args.grid)
+    if args.mode == "damage":
+        from experiments.competition import flip, regions
+        gen = torch.Generator().manual_seed(0)
+        anywhere = regions(deep, cfg.ribosome.stop_token)["any"]
+        m1, _ = flip(deep, 1, anywhere, cfg.alphabet, gen)
+        m3, _ = flip(deep, 3, anywhere, cfg.alphabet, gen)
+        # A = mutants, so share A < 0.5 means damage costs fitness
+        sets = [("1-flip mutants vs parents", m1, deep), ("3-flip mutants vs parents", m3, deep),
+                ("copies vs parents (null)", deep.clone(), deep)]
+    else:
+        good = prescreen(args.config, over, args.n)
+        rand2 = genome.random_genomes(args.n, cfg.genome_len, cfg.alphabet, cfg.init.genome_len,
+                                      torch.Generator().manual_seed(8),
+                                      exclude=cfg.ribosome.stop_token)
+        sets = [("evolved vs random", deep, rand), ("prescreened vs random", good, rand),
+                ("random vs random (null)", rand2, rand)]
+    if args.only:
+        keep = args.only.split(",")
+        sets = [x for x in sets if any(x[0].startswith(k) for k in keep)]
+    from experiments.heat_options import merge
+    cover = merge(over, json.loads(args.compete_over))
+    jobs = [(lab, a, b, int(s), args.config, cover, args.ticks, args.grid)
             for lab, a, b in sets for s in args.seeds.split(",")]
     with get_context("spawn").Pool(args.procs) as pool:
         res = pool.map(one, jobs, chunksize=1)

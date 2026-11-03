@@ -86,7 +86,11 @@ render/
   - **Heat zones** give clear local adaptation: hot-zone organisms carry 0.13 more fidelity, and both seeds agree.
   - **`fid_power: 3`** gives about 4× the baseline effect.
   - **STOP + heat** creates junk DNA (61% of each genome untranslated), which blocks fidelity adaptation.
-- **Next:** a competition assay (to measure the real cost of damage), more seeds on the GPU, M5 checkpoints, M6 fused kernel.
+- **Competition assays:** see [`docs/competition.md`](docs/competition.md).
+  - **Evolution is adaptive:** evolved lineages take about 80% of a mixed soup from random genomes (4 of 4 seeds).
+  - **The adaptation is robust:** 3 heat flips cost evolved genomes nothing measurable, even in the soup (8 seeds). That explains why fidelity is only weakly selected.
+  - Empty-arena and isolated-growth assays measure colonisation, not soup fitness.
+- **Next:** a flip dose-response in the soup (10–30 flips), a mutational-robustness test, more seeds on the GPU, M5 checkpoints, M6 fused kernel.
 
 Calibration tools:
 
