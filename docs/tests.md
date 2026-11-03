@@ -6,7 +6,7 @@ Shared setting unless stated: static mid heat, `--over '{"heat": {"base_flip": 0
 
 ---
 
-## 1. Mutational robustness — "survival of the flattest"  ⭐ priority
+## 1. Mutational robustness — "survival of the flattest"  ✅ done (first pass)
 
 **Why.** Three heat flips cost evolved genomes nothing measurable, even in the soup (`competition.md`). One explanation is that evolution has made them *robust*: they sit on flat regions of the genotype→phenotype landscape, where flips barely change the phenotype. Avida showed this at high mutation rates (Wilke et al., *Nature* 2001). The alternative is that *all* genomes, random ones included, are this insensitive, simply because the map is smooth.
 
@@ -16,15 +16,26 @@ Shared setting unless stated: static mid heat, `--over '{"heat": {"base_flip": 0
 - Repeat across heat levels (`base_flip` 0.006 / 0.03 / 0.1): robustness should increase with heat if it is adaptive.
 - *To build:* a small `experiments/robustness.py` that reuses `competition.flip` and `metrics.phenotype_smoothness` (the evolve and prescreen helpers already exist in `soup_competition.py`).
 
-**Reading it.**
+**Result (`competition.md`):**
+- *Phenotype level:* no evolved robustness. Evolved genomes change as much per flip as random genomes of the same length (`experiments/robustness.py`).
+- *Fitness level:* evolved genomes are much more robust than prescreened ones (20 flips: 0.49 vs 0.30), because their advantage is mostly length.
+
+**Still to do:**
+- Repeat across heat levels (0.006 / 0.1).
+- Test a genome set whose fitness matches the evolved set but comes from token content.
+- 8 seeds.
+
+**Reading it (original plan).**
 - Evolved genomes change *less* per flip than random genomes of equal fitness, and more so under stronger heat → robustness evolved (survival of the flattest). A strong result.
 - No difference → insensitivity is a property of the ribosome map, not of evolution. Then "make the code more fragile" is the lever for making heat matter.
 
-## 1b. Length-matched random control  ⭐ priority
+## 1b. Length-matched random control  ✅ done
 
 **Why.** Evolved genomes are shorter (27.5 vs 32 non-pad tokens), and even fully flipped mutants keep the parent's length and layout and beat random genomes (0.33 vs 0.17). How much of "evolution is adaptive" is just *shorter genomes pay less token cost*?
 
-**How.** Soup competition of evolved parents against:
+**Result (`competition.md`):** with length-dependent cost, random genomes lose 0.17 : 0.83. With a flat cost they lose only 0.41 : 0.59. Length-matched random genomes lose ~0.3 either way, so most of the evolved advantage is token cost, and some is token content. Pad layout doesn't matter beyond length. *Still to do:* 8 seeds.
+
+**How (as run, `--mode controls`).** Soup competition of evolved parents against:
 - (a) random tokens placed at exactly the parents' non-pad positions (same length and layout);
 - (b) random genomes truncated to the parents' lengths (same length, compact layout);
 - (c) ordinary 32-token random genomes.
@@ -45,7 +56,7 @@ python -m experiments.soup_competition --mode damage --flips 10,20,30 --seeds 1,
   --compete-over '{"features": {"heat": false, "hgt": false}}'
 ```
 
-**Status: done** (`competition.md`). Threshold result: 10 and 20 flips are neutral (0.49), 30 flips (≈ all tokens) cost a third of the territory (0.33), and a random genome loses badly (0.17). Re-run with 8 seeds, and with 22/24/26/28 flips to locate the threshold precisely.
+**Status: ✅ done** (`competition.md`). Threshold result: 10 and 20 flips are neutral (0.49), 30 flips (≈ all tokens) cost a third of the territory (0.33), and a random genome loses badly (0.17). Re-run with 8 seeds, and with 22/24/26/28 flips to locate the threshold precisely.
 
 ## 3. More seeds for the headline results
 
@@ -73,9 +84,12 @@ All of these used 2 seeds (4–8 for competition). Run 8+ seeds, ideally also at
 - Soup competition: STOP-evolved parents vs mutants with flips restricted to junk / expressed / the STOP itself. This needs a `--region` option in `soup_competition.py` (`competition.regions()` exists).
 - Competition: junk-rich genomes vs the same genomes with junk deleted (padded out), under heat. If junk-rich genomes win under heat but lose without it (junk costs tokens), the junk is protective.
 
-## 6. Performance on the 3060
+## 6. Performance on the 3060 (M6)  ⭐ next
 
-- `python -m soup.run --config config/tier_s.yaml --bench`, then tier_m and tier_l. Compare with the spec targets (≥ 60 / ≥ 200 / ≥ 60 ticks/s). Tiers M and L likely need the M6 fused kernel.
+- `python -m pytest -q tests/test_kernel.py` checks the Triton kernel against eager, using the CPU interpreter.
+- `python -m experiments.bench_kernel` runs the kernel micro-benchmark (eager vs Triton at 65k / 262k / 1M cells), then ticks/s per tier for both backends on the same world, against the spec targets (≥ 60 / ≥ 200 / ≥ 60 ticks/s).
+- `python -m experiments.bench_kernel --profile m` lists the top CUDA ops. If the cell net is no longer the bottleneck, the next targets are the per-tick Python/launch overhead (CUDA graphs or `torch.compile`) and action resolution.
+- `python -m soup.run --config config/tier_s.yaml --bench` gives whole-run throughput with the default (auto) kernel.
 - Note the `genomes_per_tile` value printed. It decides whether the tiled kernel's shared-memory plan works (~5–12 seen so far).
 - Viewer frame rate at each tier (HUD `fps`), and whether the per-frame texture copy is the bottleneck at Tier L.
 
@@ -89,3 +103,13 @@ Tested here only under a virtual display. On a real machine, check:
 ## 8. Checkpoints on CUDA
 
 `tests/test_soup.py::test_checkpoint_resume_is_exact` proves exact resume on CPU. On CUDA, run a world for 1000 ticks, save at 500, resume, and compare. GPU kernels may be non-deterministic (atomics in `scatter_reduce`), so expect *statistical* rather than bit-exact agreement. Document which one holds.
+
+## 9. Make behaviour matter more
+
+**Why.** Evolved fitness is mostly genome length (token cost), and 40–58% changes in cell-net weights cost nothing (`competition.md`). Richer evolution needs behaviour to matter.
+
+**Ideas to test**, each measured by the length-matched control (does token content's share of the advantage grow?):
+- scarcer or more patchy light;
+- higher attack stakes;
+- predation, where eating a neighbour's energy is the main income;
+- remove the base net's hand-set growth rule (smaller `W_base` influence).

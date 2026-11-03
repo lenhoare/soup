@@ -69,15 +69,68 @@ Same 64 evolved parents (mean depth 40.5, mean non-pad length 27.5 vs 32 for ran
 - **Part of the advantage isn't in token identity.** Even with nearly every token changed, mutants keep the parent's *length and pad layout*, and they still do far better than a random genome (0.33 vs 0.17). The evolved genomes are about 4.5 tokens shorter than random founders, which saves token-cost energy. Roughly half the evolved advantage could be "be short / this layout", and half lives in the tokens.
 - **The token-identity half is remarkably robust:** about one third of the original tokens is enough to keep it. Possible reasons: the ribosome's mean pooling spreads each token's influence thin, evolved genomes are mutationally robust, or both. `tests.md` #1 and #1b separate these.
 
+### Priority test 1: did mutational robustness evolve? (`experiments/robustness.py`)
+
+Phenotype level: relative change in cell-net weights, ‖W′ − W‖ / ‖W‖, after k heat-style flips. Mean over 64 genomes × 16 random draws (± se over genomes).
+
+| genomes | length | k = 1 | k = 3 | k = 10 | k = 20 |
+|---|---|---|---|---|---|
+| **evolved** (depth 40.5) | 27.5 | 0.129 ± 0.002 | 0.222 ± 0.004 | 0.412 ± 0.007 | 0.581 ± 0.008 |
+| length-matched random | 27.5 | 0.128 ± 0.002 | 0.220 ± 0.004 | 0.403 ± 0.007 | 0.577 ± 0.010 |
+| layout-matched random | 27.5 | 0.127 ± 0.003 | 0.218 ± 0.004 | 0.393 ± 0.007 | 0.559 ± 0.009 |
+| random | 32.0 | 0.114 ± 0.001 | 0.195 ± 0.002 | 0.354 ± 0.003 | 0.502 ± 0.005 |
+| prescreened | 32.0 | 0.114 ± 0.001 | 0.195 ± 0.002 | 0.353 ± 0.003 | 0.505 ± 0.005 |
+
+**No: robustness did not evolve, at least not in phenotype space.** Evolved genomes change exactly as much per flip as random genomes of the same length. Sensitivity depends on length alone: shorter genomes change more per flip, because each token is a bigger share of the mean-pooled translation. Trait changes behave the same way.
+
+So the flat fitness response to 10–20 flips is *not* the genomes resisting change. Their networks change by 40–58%, and **fitness in the soup barely depends on those weight changes**. In other words, the soup's fitness landscape is flat over large regions of weight space.
+
+**Fitness level.** The same soup dose-response, run on *prescreened* parents (selected for isolated growth, not evolved; length 32):
+
+| A vs parents | evolved parents | prescreened parents |
+|---|---|---|
+| copies (null) | 0.501 ± 0.027 | 0.473 ± 0.040 |
+| 10 flips | 0.488 ± 0.020 | 0.433 ± 0.029 |
+| 20 flips | **0.494 ± 0.040** | **0.297 ± 0.008** |
+| 30 flips | 0.327 ± 0.018 | 0.360 ± 0.024 |
+| random genome | 0.167 ± 0.019 | 0.401 ± 0.048 |
+
+At the fitness level, evolved genomes **are** much more robust: 20 flips cost them nothing, but cost prescreened genomes heavily. Their networks change just as much per flip (table above), so the robustness is not in the genotype→phenotype map. It is in *where the advantage lives*. Most of the evolved advantage is being short (see the controls below), and flips don't change length. The prescreened advantage is in token content, which flips destroy.
+
+Oddity worth a look: 20-flip mutants of prescreened genomes lose *more* than unrelated random genomes do (0.30 vs 0.40, tight across seeds). One guess is that near-copies compete head-on for the same niche, while unrelated genomes partly coexist.
+
+### Priority test 2: length-matched controls
+
+`soup_competition.py --mode controls`: evolved parents (depth 40.5, length 27.5) vs three kinds of random challenger, 4 seeds each, heat and HGT off during the contest. Run twice: token cost on, and cost off (a flat cost, so length gives no energy advantage). The table shows the challenger's share.
+
+| challenger | cost on | cost off |
+|---|---|---|
+| copies of the parents (null) | 0.501 ± 0.027 | 0.498 ± 0.034 |
+| random tokens, parents' length *and* pad layout | 0.275 ± 0.038 | 0.344 ± 0.051 |
+| random tokens, parents' length, compact layout | 0.292 ± 0.026 | 0.331 ± 0.020 |
+| ordinary 32-token random | **0.167 ± 0.019** | **0.411 ± 0.029** |
+
+- **Most of "evolution is adaptive" is token cost.** With length-dependent cost, ordinary random genomes lose badly (0.17). With a flat cost they nearly hold their own (0.41). Being short is the main thing evolution found.
+- **There is real content too.** At the evolved genomes' short length, random tokens lose clearly with or without cost (0.29–0.34), so evolution found tokens that work at that length. Short random genomes do *worse* than long ones when shortness isn't rewarded (0.33 vs 0.41).
+- **Pad layout doesn't matter beyond length** (layout-matched ≈ length-matched).
+- This fits the flat dose-response: 10–20 flips keep the length (the cost saving) and leave enough content, so they cost nothing. A random genome loses both.
+
 ## Overall conclusions
 
-1. **The soup is adaptive.** Lineages 40 generations deep take about 80% of a mixed soup from random genomes.
-2. **That adaptation is robust to small damage.** 1–3 random token flips don't dent it, in arenas or in the soup. The advantage is spread across the genome, and the smooth genotype→phenotype map (~12% weight change per token) means a few flips barely move the phenotype. Evolved genomes may also have become *mutationally robust* ("survival of the flattest"). Testing that means comparing the flip sensitivity of evolved and random genomes.
-3. **This is why fidelity is weakly selected.** Individual flips are nearly free. Fidelity still responds to heat zones and to power³ (`heat_options.md`), which suggests the real cost is the *accumulation* of many flips over a lineage's lifetime, not any single flip.
-4. **Assays have to match the environment.** Isolated growth and empty arenas measure colonisation ability. That correlates poorly with soup fitness (prescreened growers win the arena 0.63 : 0.37, but the soup only 0.59 : 0.41).
+1. **The soup is adaptive, and the main thing evolution found is "be short".**
+   - Lineages 40 generations deep take ~80% of a mixed soup from random genomes, but only with length-dependent token cost.
+   - With a flat cost, random genomes nearly hold their own (0.41).
+   - There is also real token content: at the evolved length, random tokens lose (~0.3).
+2. **Robustness to damage comes from where the advantage lives, not from a flatter map.**
+   - Evolved genomes are exactly as phenotypically sensitive per flip as random genomes of the same length.
+   - Yet they shrug off 10–20 flips, because flips keep length (and so the token-cost saving).
+   - Genomes whose advantage is in their tokens (prescreened) lose heavily at 20 flips.
+3. **This is why heat and fidelity mattered so little at first.** Heat flips don't touch the dominant fitness component. Fidelity only became visible when damage rates were made very uneven (heat zones, `fid_power`).
+4. **Soup fitness depends weakly on most of the cell-net weights.** 40–58% weight changes cost nothing for evolved genomes. Making behaviour matter more is probably the biggest lever for richer evolution. Options: harder environments, fewer free resources, a smaller α-independent base net.
+5. **Assays must match the environment.** Isolated growth and empty arenas measure colonisation, which barely predicts soup fitness.
 
 ## Next experiments
 
-See `tests.md`. In short:
+See `tests.md`, which tracks status. Done here: the dose-response, robustness (phenotype and fitness level) and length controls. Still open:
 - **Robustness test:** the flip sensitivity of evolved vs random genomes of similar fitness (survival of the flattest).
 - **More seeds on the GPU.** The soup assay's noise floor at 4–8 seeds is about ±0.02–0.03.

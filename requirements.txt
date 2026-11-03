@@ -6,3 +6,4 @@ matplotlib
 moderngl
 glfw
 Pillow
+# optional, for the M6 GPU kernel: comes with CUDA torch on Linux; Windows: triton-windows

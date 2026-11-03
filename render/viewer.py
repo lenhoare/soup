@@ -288,7 +288,10 @@ def run_headless(cfg, size, frames: int, tpf: float, out_dir: str | None,
     """Render frames offscreen. With supersample=N the scene is drawn at N x the size
     and box-filtered down (smoother edges/membranes); the HUD is composited at 1x."""
     import moderngl
-    ctx = moderngl.create_standalone_context(backend="egl")
+    try:
+        ctx = moderngl.create_standalone_context(backend="egl")     # Linux, no display
+    except Exception:
+        ctx = moderngl.create_standalone_context()                   # Windows / macOS
     ss = max(1, supersample)
     big = (size[0] * ss, size[1] * ss)
     fbo = ctx.simple_framebuffer(big)

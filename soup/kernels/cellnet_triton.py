@@ -99,6 +99,8 @@ def forward(layout, x: torch.Tensor, weights: torch.Tensor, gid: torch.Tensor,
     """Drop-in for cellnet.forward: x (N, n_in), weights (S, P), gid (N,) -> (N, n_out)."""
     if not HAVE_TRITON:
         raise RuntimeError("triton is not installed")
+    if block < 16 or block & (block - 1):
+        raise ValueError(f"kernel_block must be a power of two >= 16 (tl.dot), got {block}")
     n = x.shape[0]
     out = torch.empty(n, layout.n_out, device=x.device, dtype=torch.float32)
     if n == 0:
