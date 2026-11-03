@@ -37,7 +37,8 @@ def scan(cfg, n_genomes: int, ticks: int, spacing: int, min_cells: int,
     while done < n_genomes:
         world = World(cfg)
         k = min(pos.numel(), n_genomes - done)
-        g = genome.random_genomes(k, cfg.genome_len, cfg.alphabet, cfg.init.genome_len, gen)
+        g = genome.random_genomes(k, cfg.genome_len, cfg.alphabet, cfg.init.genome_len, gen,
+                                  exclude=cfg.ribosome.stop_token)
         world.seed_founders(genomes=g, positions=pos[:k])
         world.run(ticks)
         alive = world.gid >= 0

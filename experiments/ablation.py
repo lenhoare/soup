@@ -24,7 +24,7 @@ for heat, cost, hgt in itertools.product([False, True], repeat=3):
     CONDITIONS[name] = {"features": {"heat": heat, "cost": cost, "hgt": hgt}}
 CONDITIONS["control"] = {"features": {"heat": True, "cost": True, "hgt": True}, "mode": "direct"}
 
-COLS = ["organisms", "lineages", "shannon", "mean_org_size", "mean_len", "zlib_ratio",
+COLS = ["organisms", "lineages", "shannon", "mean_org_size", "mean_len", "mean_expressed", "zlib_ratio",
         "hgt_frac", "mean_fidelity", "fid_heat_corr", "mean_permeability",
         "mean_aggression", "mean_energy", "occupancy", "mean_depth",
         "fid_hot_minus_cold", "repeat_frac", "repeat_hot_minus_cold"]

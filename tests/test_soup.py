@@ -205,6 +205,50 @@ def test_direct_mode_runs_without_translation():
     assert torch.isfinite(w.weights).all()
 
 
+def test_stop_token_truncates_translation():
+    lay = CellNetLayout()
+    r = Ribosome(16, 64, lay, stop_token=15)
+    g = genome.random_genomes(1, 64, 16, 20, torch.Generator().manual_seed(0), exclude=15)
+    assert not (g == 15).any()
+    tail_changed = g.clone()
+    tail_changed[0, 12] = 15
+    other_tail = tail_changed.clone()
+    other_tail[0, 13:20] = 3                       # edits after the STOP are silent
+    a, b = r.translate(tail_changed)["delta"], r.translate(other_tail)["delta"]
+    assert torch.allclose(a, b)
+    assert not torch.allclose(a, r.translate(g)["delta"])
+    assert int(r.expressed_length(tail_changed)) == 12
+    assert int(r.expressed_length(g)) == 20
+
+
+def test_heat_options_run():
+    cfg = small_cfg(ribosome={"stop_token": 15},
+                    heat={"base_flip": 2.0, "fid_power": 2.0, "state_noise": 0.2,
+                          "energy_cost": 0.005},
+                    fields={"heat_max_wavenumber": 1, "heat_contrast": 6.0})
+    w = World(cfg)
+    w.seed_founders()
+    assert not (w.genomes == 15).any()             # founders fully expressed
+    w.run(40)
+    assert torch.isfinite(w.state).all()
+    assert w.counters["heat_flips"] > 0
+    live = w.slot_alive
+    assert (w.expressed[live] <= w.glen[live]).all()
+    # sharp heat zones: most cells are clearly hot or clearly cold
+    h = w.heat
+    assert float(((h < 0.2) | (h > 0.8)).float().mean()) > 0.4
+
+
+def test_fid_power_reduces_damage():
+    def flips(power):
+        w = World(small_cfg(heat={"base_flip": 0.5, "fid_power": power}))
+        w.seed_founders()
+        w.heat.fill_(1.0)
+        w.traits[:, 0] = 0.5
+        return sum(w.heat_damage() for _ in range(20))
+    assert flips(3.0) < 0.5 * flips(1.0)
+
+
 def test_slots_freed_when_empty():
     w = World(small_cfg())
     w.seed_founders()

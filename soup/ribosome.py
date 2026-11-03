@@ -18,9 +18,13 @@ EMBED_DIM = 8
 class Ribosome(nn.Module):
     def __init__(self, alphabet: int, genome_len: int, layout: CellNetLayout,
                  d_model: int = 64, layers: int = 2, heads: int = 4, mlp_ratio: int = 2,
-                 delta_scale: float = 1.0, seed: int = 1234, frozen: bool = True):
+                 delta_scale: float = 1.0, seed: int = 1234, frozen: bool = True,
+                 stop_token: int | None = None):
         super().__init__()
         self.layout = layout
+        # optional STOP token: translation ignores the first STOP and everything after
+        # it (untranslated "junk" still costs maintenance energy)
+        self.stop_token = stop_token
         # Seeded init without disturbing the global RNG: the "genetic code" is a
         # pure function of `seed`.
         with torch.random.fork_rng(devices=[]):
@@ -48,6 +52,8 @@ class Ribosome(nn.Module):
         [0, 1], embed (n, 8)."""
         g = genomes.long()
         pad = g == PAD
+        if self.stop_token is not None:
+            pad = pad | (torch.cumsum((g == self.stop_token).int(), dim=1) > 0)
         all_pad = pad.all(-1, keepdim=True)
         pad = pad & ~all_pad              # an all-pad genome attends over its pads
         x = self.tok(g) + self.pos[: g.shape[1]]
@@ -59,6 +65,14 @@ class Ribosome(nn.Module):
             "traits": torch.sigmoid(self.trait_head(z)),
             "embed": self.embed_head(z),
         }
+
+    def expressed_length(self, genomes: torch.Tensor) -> torch.Tensor:
+        """Non-pad tokens before the first STOP (all non-pad tokens if no STOP)."""
+        g = genomes.long()
+        keep = g != PAD
+        if self.stop_token is not None:
+            keep = keep & (torch.cumsum((g == self.stop_token).int(), dim=1) == 0)
+        return keep.sum(-1)
 
     @torch.no_grad()
     def translate(self, genomes: torch.Tensor, batch: int = 4096) -> dict[str, torch.Tensor]:

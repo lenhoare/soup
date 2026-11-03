@@ -82,7 +82,11 @@ render/
 - **Heat follow-up:** see the end of [`docs/m3_features.md`](docs/m3_features.md).
   - Fidelity is selected down under weak heat and up under strong heat, but never locally (hot vs. cold regions).
   - Heat damage turns out to be nearly neutral for evolved genomes (about −7% colony size per flip), so selection on fidelity is weak.
-- **Next:** options to make heat matter (listed in the doc), more seeds on the GPU, M5 polish (checkpoints) and M6 (fused kernel).
+- **Heat options:** see [`docs/heat_options.md`](docs/heat_options.md). Four switches, all off by default: STOP token, `fid_power`, heat zones, direct heat effects.
+  - **Heat zones** give clear local adaptation: hot-zone organisms carry 0.13 more fidelity, and both seeds agree.
+  - **`fid_power: 3`** gives about 4× the baseline effect.
+  - **STOP + heat** creates junk DNA (61% of each genome untranslated), which blocks fidelity adaptation.
+- **Next:** a competition assay (to measure the real cost of damage), more seeds on the GPU, M5 checkpoints, M6 fused kernel.
 
 Calibration tools:
 

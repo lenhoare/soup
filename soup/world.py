@@ -42,7 +42,7 @@ class World:
         rc = cfg.ribosome
         self.ribosome = Ribosome(cfg.alphabet, cfg.genome_len, lay, rc.d_model, rc.layers,
                                  rc.heads, rc.mlp_ratio, rc.delta_scale, rc.seed,
-                                 rc.frozen).to(dev)
+                                 rc.frozen, rc.stop_token).to(dev)
         self.w_base = cellnet.base_weights(lay, seed=rc.seed).to(dev)
 
         S, Lg = cfg.genome_slots, cfg.genome_len
@@ -53,6 +53,7 @@ class World:
         self.traits = torch.zeros(S, len(TRAITS), device=dev)
         self.embed = torch.zeros(S, EMBED_DIM, device=dev)
         self.glen = torch.zeros(S, device=dev)
+        self.expressed = torch.zeros(S, device=dev)   # tokens before the first STOP
         self.parent = torch.full((S,), -1, dtype=torch.long, device=dev)
         self.birth_tick = torch.zeros(S, dtype=torch.long, device=dev)
         self.depth = torch.zeros(S, dtype=torch.long, device=dev)
@@ -83,8 +84,9 @@ class World:
         fgen = torch.Generator().manual_seed(cfg.seed + 2)
         self.light_field = DriftingField(H, W, fc.modes, fc.max_wavenumber, fc.light_drift,
                                          fgen, dev, contrast=fc.light_contrast)
-        self.heat_field = DriftingField(H, W, fc.modes, fc.max_wavenumber, fc.heat_drift,
-                                        fgen, dev)
+        self.heat_field = DriftingField(H, W, fc.modes, fc.heat_max_wavenumber or fc.max_wavenumber,
+                                        fc.heat_drift, fgen, dev, contrast=fc.heat_contrast,
+                                        standardize=fc.heat_contrast is not None)
         self.light = self.light_field.at(0)
         self.heat = self.heat_field.at(0)
 
@@ -110,6 +112,7 @@ class World:
         self.traits[idx] = out["traits"]
         self.embed[idx] = out["embed"]
         self.glen[idx] = genome.effective_length(self.genomes[idx]).float()
+        self.expressed[idx] = self.ribosome.expressed_length(self.genomes[idx]).float()
         self.dirty[idx] = False
         return idx.numel()
 
@@ -121,7 +124,8 @@ class World:
         if genomes is None:
             n = ic.founders if n is None else n
             genomes = genome.random_genomes(n, self.cfg.genome_len, self.cfg.alphabet,
-                                            ic.genome_len, self.cpu_gen)
+                                            ic.genome_len, self.cpu_gen,
+                                            exclude=self.cfg.ribosome.stop_token)
         n = genomes.shape[0]
         if positions is not None:
             pos = positions.to(self.device)[:n]
@@ -208,8 +212,10 @@ class World:
                               cfg.chunk_cells)
 
         # ---- state + morphogen emission
-        st_f[:, idx] = (st_f[:, idx] * (1 - dc.state_leak)
-                        + dc.state_rate * torch.tanh(out[:, lay.out_state]).T).clamp_(-1, 1)
+        new_st = st_f[:, idx] * (1 - dc.state_leak) + dc.state_rate * torch.tanh(out[:, lay.out_state]).T
+        if cfg.heat.state_noise > 0:   # heat jostles the cell's memory directly
+            new_st = new_st + cfg.heat.state_noise * self.heat.view(-1)[idx] * self._randn(*new_st.shape)
+        st_f[:, idx] = new_st.clamp_(-1, 1)
         mo_f[:, idx] = (mo_f[:, idx]
                         + dc.emit_rate * F.softplus(out[:, lay.out_morph]).T).clamp_(0, 2)
 
@@ -300,6 +306,8 @@ class World:
         income = ec.photo * self.light.view(-1)[live] * (1 - ec.crowding * occ.view(-1)[live])
         income = income * (~attacked[live])
         cost = ec.basal + ec.c_fid * self.traits[lg, FIDELITY]
+        if cfg.heat.energy_cost > 0:   # hot zones are harsh regardless of genome
+            cost = cost + cfg.heat.energy_cost * self.heat.view(-1)[live]
         if cfg.features.cost:
             cost = cost + ec.c_tok * self.glen[lg]
         else:
@@ -370,7 +378,8 @@ class World:
         g = self.gid[alive]
         cnt = torch.bincount(g, minlength=S).float()
         mean_h = torch.bincount(g, weights=self.heat[alive], minlength=S) / cnt.clamp(min=1)
-        p = self.cfg.heat.base_flip * mean_h * (1 - self.traits[:, FIDELITY]) * (cnt > 0)
+        hc = self.cfg.heat
+        p = hc.base_flip * mean_h * (1 - self.traits[:, FIDELITY]) ** hc.fid_power * (cnt > 0)
         if self.direct:
             n = torch.poisson(p * self.glen, generator=self.gen)
             hit = n > 0

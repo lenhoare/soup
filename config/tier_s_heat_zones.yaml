@@ -1,0 +1,6 @@
+# Tier S with sharp, large heat zones (docs/heat_options.md): fidelity adapts locally.
+grid: [256, 256]
+genome_slots: 8192
+init: {founders: 256, genome_len: 32}
+heat: {base_flip: 0.03}
+fields: {heat_drift: 0.0, heat_max_wavenumber: 1, heat_contrast: 4.0}

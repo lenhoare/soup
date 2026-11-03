@@ -27,6 +27,7 @@ def snapshot(world, tile: int = 16) -> dict:
     m["distinct_genomes"] = int(torch.unique(g, dim=0).shape[0])
     L = world.glen[live_slots]
     m["mean_len"] = float(L.mean())
+    m["mean_expressed"] = float(world.expressed[live_slots].mean())
     m["median_len"] = float(L.median())
     raw = g.cpu().numpy().tobytes()
     m["zlib_ratio"] = len(zlib.compress(raw, 9)) / max(len(raw), 1)

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 
 import torch
 
@@ -62,10 +63,13 @@ def main() -> None:
     ap.add_argument("--ticks", type=int, default=128)
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--flips", default="1,3")
+    ap.add_argument("--over", default="{}", help="JSON config overrides (evolve and grow)")
     args = ap.parse_args()
+    over = json.loads(args.over)
     torch.set_grad_enabled(False)
 
-    ecfg = load_config(args.config, {"grid": [args.evolve_grid] * 2, "init": {"founders": 64}})
+    ecfg = load_config(args.config, {**over, "grid": [args.evolve_grid] * 2,
+                                     "init": {"founders": 64}})
     w = World(ecfg)
     w.seed_founders()
     w.run(args.evolve_ticks)
@@ -73,13 +77,17 @@ def main() -> None:
     top = counts.argsort(descending=True)[: args.top]
     top = top[counts[top] > 0]
     evolved = w.genomes[top].cpu()
+    if ecfg.ribosome.stop_token is not None:
+        ex = w.expressed[top].float()
+        print(f"expressed length of evolved genomes: mean {ex.mean():.1f} "
+              f"(non-pad {w.glen[top].float().mean():.1f})")
     print(f"evolved {args.evolve_ticks} ticks: took {evolved.shape[0]} most abundant genomes "
           f"(cells {int(counts[top].min())}-{int(counts[top].max())})")
 
-    gcfg = dict(load_config(args.config, {"grid": [512, 512]}))
+    gcfg = dict(load_config(args.config, {**over, "grid": [512, 512]}))
     gen = torch.Generator().manual_seed(0)
     rand = genome.random_genomes(evolved.shape[0], ecfg.genome_len, ecfg.alphabet,
-                                 ecfg.init.genome_len, gen)
+                                 ecfg.init.genome_len, gen, exclude=ecfg.ribosome.stop_token)
     print("set       k  mean log size  paired diff vs parent (mean ± se)  frac worse")
     for name, base in (("evolved", evolved), ("random", rand)):
         b = grow(gcfg, base, args.ticks, 32, args.reps)

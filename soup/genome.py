@@ -11,9 +11,15 @@ PAD = 0
 
 
 def random_genomes(n: int, length: int, alphabet: int, eff_len: int,
-                   generator: torch.Generator) -> torch.Tensor:
-    """n random genomes (on CPU) whose first `eff_len` tokens are non-pad."""
-    g = torch.randint(1, alphabet, (n, length), generator=generator, dtype=torch.uint8)
+                   generator: torch.Generator, exclude: int | None = None) -> torch.Tensor:
+    """n random genomes (on CPU) whose first `eff_len` tokens are non-pad. `exclude`
+    (e.g. a STOP token) is never drawn, so founders are fully expressed."""
+    if exclude is None:
+        g = torch.randint(1, alphabet, (n, length), generator=generator, dtype=torch.uint8)
+    else:
+        allowed = torch.tensor([t for t in range(1, alphabet) if t != exclude],
+                               dtype=torch.uint8)
+        g = allowed[torch.randint(0, len(allowed), (n, length), generator=generator)]
     if eff_len < length:
         g[:, eff_len:] = PAD
     return g

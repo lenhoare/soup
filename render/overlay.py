@@ -90,11 +90,13 @@ def draw_inspector(img: Image.Image, info: dict, alphabet: int) -> None:
             ("depth", f"{info['depth']}"), ("age", f"{info['age']} ticks"),
             ("cells", f"{info['cells']}"), ("energy", f"{info['energy']:.2f}"),
             ("length", f"{info['length']} tokens")]
+    if info.get("stop_token") is not None:
+        meta.append(("expressed", f"{info['expressed']} tokens"))
     for i, (k, v) in enumerate(meta):
         cx = x + (i % 2) * 172
         cy = y + (i // 2) * 19
         d.text((cx, cy), k, font=font(13), fill=MUTED)
-        d.text((cx + 58, cy), v, font=font(13, mono=True), fill=INK)
+        d.text((cx + 72, cy), v, font=font(13, mono=True), fill=INK)
     y += 19 * math.ceil(len(meta) / 2) + 10
 
     d.text((x, y), "genome", font=font(13), fill=INK2)
@@ -104,10 +106,18 @@ def draw_inspector(img: Image.Image, info: dict, alphabet: int) -> None:
     y += 20
     cols_rgb = token_colours(alphabet)
     fm = font(11, mono=True)
+    stop = info.get("stop_token")
+    after_stop = False
     for i, tok in enumerate(info["genome"]):
         tx = x + (i % cols) * (tile + gap)
         ty = y + (i // cols) * (tile + gap)
-        d.rounded_rectangle((tx, ty, tx + tile, ty + tile), radius=3, fill=cols_rgb[tok])
+        fill = cols_rgb[tok]
+        if stop is not None and tok == stop and not after_stop:
+            after_stop = True
+            fill = (235, 235, 235, 255)          # the first STOP: white tile
+        elif after_stop and tok:
+            fill = fill[:3] + (70,)              # untranslated: faded
+        d.rounded_rectangle((tx, ty, tx + tile, ty + tile), radius=3, fill=fill)
         if tok:
             ch = f"{tok:x}"
             d.text((tx + tile / 2 - d.textlength(ch, font=fm) / 2, ty + 3), ch, font=fm,
@@ -153,5 +163,6 @@ def organism_info(world, slot: int, history: list[str]) -> dict:
         "cells": cells, "energy": float(w.energy[alive_mask].mean()) if cells else 0.0,
         "length": int(w.glen[slot]), "genome": w.genomes[slot].cpu().tolist(),
         "spliced": w.spliced[slot].cpu().tolist(), "traits": w.traits[slot].cpu().tolist(),
+        "stop_token": w.cfg.ribosome.stop_token, "expressed": int(w.expressed[slot]),
         "history": history,
     }

@@ -26,10 +26,16 @@ DEFAULTS: dict[str, Any] = {
         "delta_scale": 1.0,    # scale of dW relative to a unit-variance init
         "frozen": True,
         "seed": 1234,          # fixes the "genetic code" in Phase 1
+        "stop_token": None,    # e.g. 15: translation stops at the first STOP (fragile code)
     },
     "init": {"founders": 256, "genome_len": 32, "energy": 0.5},
     "mutation": {"p_sub": 0.01, "p_indel": 0.003, "p_dup": 0.002, "p_del": 0.002},
-    "heat": {"base_flip": 6.0e-3},   # M3: ~1 flip / 10 epochs at heat 0.5, fidelity 0.5
+    "heat": {
+        "base_flip": 6.0e-3,   # M3: ~1 flip / 10 epochs at heat 0.5, fidelity 0.5
+        "fid_power": 1.0,      # p_flip ~ (1 - fidelity)^fid_power: >1 = stronger repair lever
+        "state_noise": 0.0,    # direct effect: hidden-state noise per tick ~ heat
+        "energy_cost": 0.0,    # direct effect: extra energy cost per tick ~ heat
+    },
     # M3: p_hgt 0.05 put a spliced fragment in ~100% of genomes within 1k ticks
     "hgt": {"samples_per_epoch": 4096, "p_hgt": 0.005, "window": [2, 8]},
     "energy": {
@@ -56,6 +62,8 @@ DEFAULTS: dict[str, Any] = {
     "fields": {
         "modes": 6, "max_wavenumber": 3, "update_every": 8,
         "light_drift": 0.002, "heat_drift": 0.001, "light_contrast": 6.0,
+        # heat zones: fewer/larger patches (wavenumber) with sharp edges (contrast)
+        "heat_max_wavenumber": None, "heat_contrast": None,
     },
     "features": {"heat": True, "cost": True, "hgt": True},
     "mode": "string",          # string | direct (control: weights mutated directly)
