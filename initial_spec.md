@@ -334,7 +334,7 @@ seed: 1
 - [x] **M2 — Evolution.** Spores, mutation, slot allocation/GC, attack. Calibrate for survival and coexistence. Run the viability scan: what fraction of random strings produce a living organism? Done, see `docs/m2_calibration.md`. Note that α = 0.5 (section 3.2) proved far too small; the default is now 6.
 - [x] **M3 — Three features.** Heat, token cost, HGT, `fidelity`/`permeability` traits. Run the ablation grid at Tier S. Done, see `docs/m3_features.md`. Changes from this spec: heat only hits non-pad tokens; `base_flip` 6e-3, `p_hgt` 0.005; "cost off" means a flat cost, not zero.
 - [x] **M4 — Viewer v1.** Lineage colouring, membranes, heat shimmer, HUD, inspector with genome ribbon. Done, plus parts of M5: bloom/tonemap, event flashes, all six view modes, and headless video via ffmpeg. Checkpoints are still to do.
-- [ ] **M5 — Polish.** Bloom/tonemap, event flashes, view modes, capture pipeline.
+- [x] **M5 — Polish.** Bloom/tonemap, event flashes, view modes, capture pipeline. Done: the visual items came with M4; checkpoints (exact resume, re-render from any checkpoint) and 2× supersampled video were added here.
 - [ ] **M6 — Fused kernel.** Tile-based Triton/CUDA tick, hit Tier M target, then Tier L.
 - [ ] **M7 — Showpiece run.** 1M cells, long run, edited video + write-up of what emerged.
 

@@ -11,6 +11,7 @@ import time
 
 import torch
 
+from . import checkpoint
 from .config import load_config
 from .metrics import format_line, snapshot
 from .world import World
@@ -42,6 +43,10 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--bench", action="store_true", help="time ticks/s and exit")
     ap.add_argument("--device", help="override device (cpu/cuda)")
     ap.add_argument("--seed", type=int)
+    ap.add_argument("--load", help="resume from a checkpoint (its config is used)")
+    ap.add_argument("--checkpoint-every", type=int, default=0,
+                    help="save a checkpoint every N ticks into --checkpoint-dir")
+    ap.add_argument("--checkpoint-dir", default="checkpoints")
     args = ap.parse_args(argv)
 
     over = {}
@@ -49,10 +54,15 @@ def main(argv: list[str] | None = None) -> None:
         over["device"] = args.device
     if args.seed is not None:
         over["seed"] = args.seed
-    cfg = load_config(args.config, over)
     torch.set_grad_enabled(False)
-    world = World(cfg)
-    world.seed_founders()
+    if args.load:
+        world = checkpoint.load(args.load, device=args.device)
+        cfg = world.cfg
+        print(f"resumed {args.load} at tick {world.tick_count}")
+    else:
+        cfg = load_config(args.config, over)
+        world = World(cfg)
+        world.seed_founders()
     print(f"device={world.device} grid={cfg.grid} slots={cfg.genome_slots} "
           f"cellnet_params={world.layout.n_params} "
           f"ribosome_params={sum(p.numel() for p in world.ribosome.parameters())}")
@@ -69,6 +79,10 @@ def main(argv: list[str] | None = None) -> None:
     t0 = time.perf_counter()
     for t in range(1, args.ticks + 1):
         world.tick()
+        if args.checkpoint_every and world.tick_count % args.checkpoint_every == 0:
+            path = f"{args.checkpoint_dir}/soup_{world.tick_count:08d}.pt"
+            checkpoint.save(world, path)
+            print(f"checkpoint {path} ({checkpoint.size_mb(path):.1f} MB)", flush=True)
         if args.snapshot and args.snapshot_every and t % args.snapshot_every == 0:
             from render.snapshot import render, write_png
             write_png(args.snapshot.replace(".png", f"_{t:06d}.png"), render(world))

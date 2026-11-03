@@ -30,6 +30,12 @@ python -m render.viewer --headless frames/ --frames 300        # PNG sequence
 | `1`–`6` | lineage, energy, morphogens, genome distance, heat/light, lineage depth |
 | `H` `C` `G` | toggle heat / token cost / gene transfer live |
 | `F` / `S` / `B` / `O` | fit view / snapshot PNG / bloom / HUD |
+| `K` | save a checkpoint to `checkpoints/` |
+
+**Checkpoints:**
+- `python -m soup.run --ticks 20000 --checkpoint-every 2000` saves periodic checkpoints. Only live slots' weights are stored, so they stay small: about 2.5 MB at 128×128.
+- `python -m soup.run --load checkpoints/soup_00010000.pt --ticks 5000` resumes. On the same device this is exact: identical to never having stopped.
+- `python -m render.viewer --load checkpoints/soup_00010000.pt --video hq.mp4 --size 1920x1080 --supersample 2 --frames 900` re-renders a saved moment at high quality.
 
 **What you're seeing:**
 - **Hue** is the lineage colour, taken from the ribosome's genome embedding, so similar genomes get similar colours.
@@ -90,7 +96,10 @@ render/
   - **Evolution is adaptive:** evolved lineages take about 80% of a mixed soup from random genomes (4 of 4 seeds).
   - **The adaptation is robust:** 3 heat flips cost evolved genomes nothing measurable, even in the soup (8 seeds). That explains why fidelity is only weakly selected.
   - Empty-arena and isolated-growth assays measure colonisation, not soup fitness.
-- **Next:** a flip dose-response in the soup (10–30 flips), a mutational-robustness test, more seeds on the GPU, M5 checkpoints, M6 fused kernel.
+- **Flip dose-response:** there's a threshold. 10–20 flips (of ~28 tokens) cost nothing, 30 flips cost a third of the territory, and a random genome loses badly. Part of the evolved advantage seems to be just *shorter genomes* (27.5 vs 32 tokens).
+- **M5:** checkpoints (`--checkpoint-every`, `--load`, `K` in the viewer, exact resume) and 2× supersampled video.
+- **Important tests to run later:** [`docs/tests.md`](docs/tests.md), including mutational robustness and a length-matched control.
+- **Next:** M6 fused GPU kernel, then the tests in `docs/tests.md` on the 3060.
 
 Calibration tools:
 

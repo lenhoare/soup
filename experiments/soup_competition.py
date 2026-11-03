@@ -79,6 +79,7 @@ def main() -> None:
     ap.add_argument("--compete-over", default="{}",
                     help="extra JSON overrides for the competition runs only (not evolution)")
     ap.add_argument("--only", help="comma-separated set labels to run")
+    ap.add_argument("--flips", default="1,3", help="damage mode: flip counts to test")
     ap.add_argument("--json")
     args = ap.parse_args()
     torch.set_grad_enabled(False)
@@ -94,11 +95,14 @@ def main() -> None:
         from experiments.competition import flip, regions
         gen = torch.Generator().manual_seed(0)
         anywhere = regions(deep, cfg.ribosome.stop_token)["any"]
-        m1, _ = flip(deep, 1, anywhere, cfg.alphabet, gen)
-        m3, _ = flip(deep, 3, anywhere, cfg.alphabet, gen)
-        # A = mutants, so share A < 0.5 means damage costs fitness
-        sets = [("1-flip mutants vs parents", m1, deep), ("3-flip mutants vs parents", m3, deep),
-                ("copies vs parents (null)", deep.clone(), deep)]
+        # A = mutants, so share A < 0.5 means damage costs fitness. Flips are capped at
+        # each genome's non-pad length; a random genome is the "fully destroyed" reference.
+        sets = []
+        for k in (int(x) for x in args.flips.split(",")):
+            m, _ = flip(deep, k, anywhere, cfg.alphabet, gen, cap=True)
+            sets.append((f"{k}-flip mutants vs parents", m, deep))
+        sets += [("random vs parents (max damage)", rand, deep),
+                 ("copies vs parents (null)", deep.clone(), deep)]
     else:
         good = prescreen(args.config, over, args.n)
         rand2 = genome.random_genomes(args.n, cfg.genome_len, cfg.alphabet, cfg.init.genome_len,

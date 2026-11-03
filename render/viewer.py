@@ -12,6 +12,10 @@ Controls
     H / C / G    toggle heat / token cost / gene transfer live
     F            fit world to window     S         snapshot PNG
     B            toggle bloom            O         toggle HUD
+    K            save a checkpoint (checkpoints/); resume or re-render with --load
+
+    python -m render.viewer --load checkpoints/soup_00004096.pt --video hq.mp4 \
+        --size 1920x1080 --supersample 2      # re-render a saved moment at quality
 """
 from __future__ import annotations
 
@@ -25,6 +29,7 @@ import numpy as np
 import torch
 from PIL import Image
 
+from soup import checkpoint
 from soup.config import load_config
 from soup.metrics import snapshot
 from soup.world import World
@@ -39,13 +44,16 @@ HINT = ("space pause · . step · [ ] speed · 1-6 views · H/C/G features · "
 class Session:
     """Simulation + renderer state shared by the window and headless paths."""
 
-    def __init__(self, cfg, ctx, size: tuple[int, int]):
-        self.world = World(cfg)
-        self.world.seed_founders()
+    def __init__(self, cfg, ctx, size: tuple[int, int], world: World | None = None):
+        if world is None:
+            world = World(cfg)
+            world.seed_founders()
+        self.world = world
         self.r = Renderer(ctx, self.world)
         self.cam = Camera()
         self.cam.fit(self.world.W, self.world.H, *size)
         self.mode = 1
+        self.ss = 1              # supersampling factor (headless), for the HUD zoom
         self.paused = False
         self.tpf = 1.0           # ticks per frame (may be fractional)
         self._acc = 0.0
@@ -144,7 +152,7 @@ class Session:
                ("lineages", f"{st.get('lineages', 0):,}"),
                ("diversity", f"{st.get('shannon', 0):.2f}"),
                ("mean length", f"{st.get('mean_len', 0):.1f}"),
-               ("zoom", f"{self.cam.zoom:.1f}x"),
+               ("zoom", f"{self.cam.zoom / self.ss:.1f}x"),
                ("ticks/s", f"{self.tps:.1f}" + ("  (paused)" if self.paused else "")),
                ("ticks/frame", f"{self.tpf:g}"),
                ("fps", f"{self.fps:.0f}" if self.fps > 0 else "-"),
@@ -166,7 +174,7 @@ class Session:
 
 
 # ---------------------------------------------------------------------- window
-def run_window(cfg, size: tuple[int, int]) -> None:
+def run_window(cfg, size: tuple[int, int], world: World | None = None) -> None:
     import glfw
     import moderngl
 
@@ -181,7 +189,7 @@ def run_window(cfg, size: tuple[int, int]) -> None:
     glfw.swap_interval(1)
     ctx = moderngl.create_context()
     fb_size = glfw.get_framebuffer_size(win)
-    s = Session(cfg, ctx, fb_size)
+    s = Session(cfg, ctx, fb_size, world)
     scale = fb_size[0] / size[0]          # HiDPI: framebuffer px per window px
     drag = {"down": False, "moved": False, "x": 0.0, "y": 0.0}
     cursor = [None]
@@ -244,6 +252,9 @@ def run_window(cfg, size: tuple[int, int]) -> None:
             s.show_hud = not s.show_hud
         elif key == glfw.KEY_ESCAPE:
             s.select(-1)
+        elif key == glfw.KEY_K:
+            path = checkpoint.save(s.world, f"checkpoints/soup_{s.world.tick_count:08d}.pt")
+            print("saved", path)
         elif key == glfw.KEY_S:
             os.makedirs("snapshots", exist_ok=True)
             img = np.frombuffer(ctx.screen.read(components=3), np.uint8).reshape(fh, fw, 3)
@@ -272,14 +283,20 @@ def run_window(cfg, size: tuple[int, int]) -> None:
 # ---------------------------------------------------------------------- headless
 def run_headless(cfg, size, frames: int, tpf: float, out_dir: str | None,
                  video: str | None, fps: int, mode: int, zoom: float | None,
-                 warmup: int, hud: bool) -> None:
+                 warmup: int, hud: bool, world: World | None = None,
+                 supersample: int = 1) -> None:
+    """Render frames offscreen. With supersample=N the scene is drawn at N x the size
+    and box-filtered down (smoother edges/membranes); the HUD is composited at 1x."""
     import moderngl
     ctx = moderngl.create_standalone_context(backend="egl")
-    fbo = ctx.simple_framebuffer(size)
-    s = Session(cfg, ctx, size)
-    s.mode, s.tpf, s.show_hud = mode, tpf, hud
+    ss = max(1, supersample)
+    big = (size[0] * ss, size[1] * ss)
+    fbo = ctx.simple_framebuffer(big)
+    s = Session(cfg, ctx, size, world)
+    s.cam.fit(s.world.W, s.world.H, *big)
+    s.mode, s.tpf, s.show_hud, s.ss = mode, tpf, hud and ss == 1, ss
     if zoom:
-        s.cam.zoom = zoom
+        s.cam.zoom = zoom * ss
     s.step(warmup)
     proc = None
     if video:
@@ -294,8 +311,18 @@ def run_headless(cfg, size, frames: int, tpf: float, out_dir: str | None,
         os.makedirs(out_dir, exist_ok=True)
     for i in range(frames):
         s.advance()
-        s.render(fbo, size, None, i / fps, force_overlay=hud)
+        s.render(fbo, big, None, i / fps, force_overlay=hud and ss == 1)
         raw = fbo.read(components=3)
+        if ss > 1:
+            img = np.frombuffer(raw, np.uint8).reshape(big[1], big[0], 3).astype(np.float32)
+            img = img.reshape(size[1], ss, size[0], ss, 3).mean((1, 3))
+            if hud:                         # HUD at 1x, composited after downsampling
+                s.show_hud = True
+                ov = s.overlay(size, force=True)
+                s.show_hud = False
+                a = ov[::-1, :, 3:4].astype(np.float32) / 255
+                img = img * (1 - a) + ov[::-1, :, :3].astype(np.float32) * a
+            raw = np.ascontiguousarray(img.round().astype(np.uint8)).tobytes()
         if proc:
             proc.stdin.write(raw)
         if out_dir:
@@ -325,20 +352,28 @@ def main(argv=None) -> None:
     ap.add_argument("--zoom", type=float)
     ap.add_argument("--warmup", type=int, default=0, help="ticks to run before the first frame")
     ap.add_argument("--no-hud", action="store_true")
+    ap.add_argument("--load", help="start from a checkpoint (its config is used)")
+    ap.add_argument("--supersample", type=int, default=1, help="headless/video: render at Nx")
     a = ap.parse_args(argv)
     over = {}
     if a.seed is not None:
         over["seed"] = a.seed
     if a.device:
         over["device"] = a.device
-    cfg = load_config(a.config, over)
     torch.set_grad_enabled(False)
+    world = None
+    if a.load:
+        world = checkpoint.load(a.load, device=a.device)
+        cfg = world.cfg
+        print(f"loaded {a.load} at tick {world.tick_count}")
+    else:
+        cfg = load_config(a.config, over)
     size = tuple(int(v) for v in a.size.split("x"))
     if a.headless or a.video:
         run_headless(cfg, size, a.frames, a.ticks_per_frame, a.headless, a.video, a.fps,
-                     a.mode, a.zoom, a.warmup, not a.no_hud)
+                     a.mode, a.zoom, a.warmup, not a.no_hud, world, a.supersample)
     else:
-        run_window(cfg, size)
+        run_window(cfg, size, world)
 
 
 if __name__ == "__main__":

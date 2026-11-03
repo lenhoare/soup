@@ -281,6 +281,23 @@ def test_competition_helpers():
     assert s.shape == (2,) and ((s >= 0) & (s <= 1) | s.isnan()).all()
 
 
+def test_checkpoint_resume_is_exact(tmp_path):
+    from soup import checkpoint
+    cfg = small_cfg(energy={"spore_min": 0.0, "spore_span": 0.0}, hgt={"p_hgt": 0.5},
+                    heat={"base_flip": 0.2})
+    a = World(cfg)
+    a.seed_founders()
+    a.run(20)
+    path = checkpoint.save(a, str(tmp_path / "ck.pt"))
+    a.run(30)                                   # crosses epochs: heat, HGT, spores
+    b = checkpoint.load(path)
+    assert b.tick_count == 20
+    b.run(30)
+    for k in ("gid", "genomes", "energy", "state", "root", "spliced"):
+        assert torch.equal(getattr(a, k), getattr(b, k)), k
+    assert a.counters == b.counters and a.next_root == b.next_root
+
+
 def test_slots_freed_when_empty():
     w = World(small_cfg())
     w.seed_founders()

@@ -45,11 +45,13 @@ def regions(g: torch.Tensor, stop: int | None) -> dict[str, torch.Tensor]:
 
 
 def flip(g: torch.Tensor, k: int, where: torch.Tensor, alphabet: int,
-         gen: torch.Generator, avoid: int | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+         gen: torch.Generator, avoid: int | None = None,
+         cap: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
     """k heat-style flips per genome at positions allowed by `where`. Returns the
-    mutants and a mask of genomes that had enough positions."""
+    mutants and a mask of genomes that had enough positions. With cap=True a genome
+    with fewer than k allowed positions gets all of them flipped instead."""
     out = g.clone()
-    ok = where.sum(1) >= k
+    ok = where.sum(1) >= (1 if cap else k)
     for i in ok.nonzero().flatten().tolist():
         cand = where[i].nonzero().flatten()
         pos = cand[torch.randperm(cand.numel(), generator=gen)[:k]]

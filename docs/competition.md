@@ -53,6 +53,22 @@ A = mutants of the same 64 evolved parents, B = the parents themselves.
 
 **Even in the soup, and even for clearly adapted genomes, a few heat flips cost nothing measurable.** The clean 8-seed test puts 3-flip mutants at +0.04 *above* the null, which is about 2 standard errors, so "no cost" rather than "benefit".
 
+### Dose-response: when does accumulated damage start to hurt?
+
+Same 64 evolved parents (mean depth 40.5, mean non-pad length 27.5 vs 32 for random founders). Heat and HGT off during the contest, 4 seeds. Flips are capped at each genome's non-pad length, so 30 flips ≈ every token changed while keeping the parent's length and pad layout.
+
+| A vs parents | A's share | per seed |
+|---|---|---|
+| copies (null) | 0.501 ± 0.027 | 0.55 0.46 0.54 0.44 |
+| 10-flip mutants | 0.488 ± 0.020 | 0.47 0.48 0.45 0.55 |
+| 20-flip mutants | 0.494 ± 0.040 | 0.47 0.43 0.61 0.47 |
+| **30-flip mutants** | **0.327 ± 0.018** | 0.32 0.28 0.34 0.36 |
+| **random genome** | **0.167 ± 0.019** | 0.11 0.20 0.19 0.17 |
+
+- **There is a threshold, not a gradual cost.** Changing up to 20 of ~28 tokens costs nothing measurable. Changing nearly all of them costs a third of the territory.
+- **Part of the advantage isn't in token identity.** Even with nearly every token changed, mutants keep the parent's *length and pad layout*, and they still do far better than a random genome (0.33 vs 0.17). The evolved genomes are about 4.5 tokens shorter than random founders, which saves token-cost energy. Roughly half the evolved advantage could be "be short / this layout", and half lives in the tokens.
+- **The token-identity half is remarkably robust:** about one third of the original tokens is enough to keep it. Possible reasons: the ribosome's mean pooling spreads each token's influence thin, evolved genomes are mutationally robust, or both. `tests.md` #1 and #1b separate these.
+
 ## Overall conclusions
 
 1. **The soup is adaptive.** Lineages 40 generations deep take about 80% of a mixed soup from random genomes.
@@ -62,6 +78,6 @@ A = mutants of the same 64 evolved parents, B = the parents themselves.
 
 ## Next experiments
 
-- **Dose-response in the soup:** 10–30 flips, to find where accumulated damage starts to hurt. This would test point 3 directly.
+See `tests.md`. In short:
 - **Robustness test:** the flip sensitivity of evolved vs random genomes of similar fitness (survival of the flattest).
 - **More seeds on the GPU.** The soup assay's noise floor at 4–8 seeds is about ±0.02–0.03.
