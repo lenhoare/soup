@@ -17,6 +17,8 @@ DEFAULTS: dict[str, Any] = {
     "device": "auto",          # auto | cpu | cuda
     "dtype": "float32",        # cached cell-net weights; float16 is fine on CUDA
     "chunk_cells": 32768,      # cells per gathered-weight batch (bounds memory)
+    "kernel": "auto",          # cell-net backend: auto (triton on CUDA if available) | eager | triton
+    "kernel_block": 32,        # triton: cells per program (one genome per block)
     "epoch_ticks": 32,
     "cell_net": {"hidden": 16, "state_ch": 8, "morph_ch": 4},
     "ribosome": {

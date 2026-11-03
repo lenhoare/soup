@@ -97,6 +97,7 @@ class World:
         self.filt = perception_filters().repeat(C, 1, 1).unsqueeze(1).to(dev)  # (4C,1,3,3)
         self.dirs = DIRS.to(dev)
         self.tick_count = 0
+        self.kernel = self._pick_kernel()
         self.counters = {"births": 0, "spores": 0, "attacks_won": 0, "deaths": 0,
                          "spores_blocked": 0, "heat_flips": 0, "heat_hits": 0, "hgt": 0}
 
@@ -211,8 +212,7 @@ class World:
         kin, occ = self._neighbour_stats()
         extras = torch.stack([self.energy, self.light, kin, self.heat]).view(4, HW)[:, idx].T
         g = gid_f[idx]
-        out = cellnet.forward(lay, torch.cat([percept, extras], 1), self.weights, g,
-                              cfg.chunk_cells)
+        out = self._cellnet(torch.cat([percept, extras], 1), g)
 
         # ---- state + morphogen emission
         new_st = st_f[:, idx] * (1 - dc.state_leak) + dc.state_rate * torch.tanh(out[:, lay.out_state]).T
@@ -332,6 +332,27 @@ class World:
 
         if spore.numel():
             self.translate_dirty()   # founders need weights before their first tick
+
+    def _pick_kernel(self) -> str:
+        k = self.cfg.kernel
+        if k == "auto":
+            from .kernels import cellnet_triton
+            return "triton" if (self.device.type == "cuda" and cellnet_triton.HAVE_TRITON) else "eager"
+        return k
+
+    def _cellnet(self, x: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
+        """Run every live cell's own genome net. Triton path (M6) groups cells by genome
+        so each genome's weights are loaded once per block; eager path gathers per cell."""
+        if self.kernel == "triton":
+            try:
+                from .kernels import cellnet_triton
+                return cellnet_triton.forward(self.layout, x, self.weights, g,
+                                              self.cfg.kernel_block)
+            except Exception as e:  # compile/runtime problem: fall back once, loudly
+                import warnings
+                warnings.warn(f"triton cell-net kernel failed ({e!r}); using eager")
+                self.kernel = "eager"
+        return cellnet.forward(self.layout, x, self.weights, g, self.cfg.chunk_cells)
 
     def _diffuse_morph(self) -> None:
         dc = self.cfg.dynamics

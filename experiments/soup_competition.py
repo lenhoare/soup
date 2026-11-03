@@ -41,6 +41,27 @@ def prescreen(config: str, over: dict, n: int) -> torch.Tensor:
     return pool[size.argsort(descending=True)[:n]]
 
 
+def layout_matched(parents: torch.Tensor, alphabet: int, gen: torch.Generator,
+                   exclude: int | None = None) -> torch.Tensor:
+    """Random non-pad tokens at exactly the parents' non-pad positions: same length and
+    pad layout, no token identity."""
+    allowed = torch.tensor([t for t in range(1, alphabet) if t != exclude], dtype=torch.uint8)
+    rnd = allowed[torch.randint(0, len(allowed), parents.shape, generator=gen)]
+    return torch.where(parents != 0, rnd, torch.zeros_like(parents))
+
+
+def length_matched(parents: torch.Tensor, alphabet: int, gen: torch.Generator,
+                   exclude: int | None = None) -> torch.Tensor:
+    """Random genomes with each parent's non-pad length, packed at the start (the
+    founders' compact layout)."""
+    from soup import genome
+    out = genome.random_genomes(parents.shape[0], parents.shape[1], alphabet, parents.shape[1],
+                                gen, exclude=exclude)
+    L = (parents != 0).sum(1)
+    out[torch.arange(parents.shape[1]).view(1, -1) >= L.view(-1, 1)] = 0
+    return out
+
+
 def one(job) -> dict:
     label, a, b, seed, config, over, ticks, grid = job
     torch.set_num_threads(1)
@@ -73,9 +94,12 @@ def main() -> None:
     ap.add_argument("--grid", type=int, default=128)
     ap.add_argument("--seeds", default="1,2,3,4")
     ap.add_argument("--procs", type=int, default=4)
-    ap.add_argument("--mode", default="adaptation", choices=["adaptation", "damage"],
-                    help="adaptation: evolved/prescreened vs random; damage: evolved "
-                         "parents vs their own k-flip mutants")
+    ap.add_argument("--mode", default="adaptation", choices=["adaptation", "damage", "controls"],
+                    help="adaptation: evolved/prescreened vs random; damage: parents vs "
+                         "their own k-flip mutants; controls: evolved parents vs layout- "
+                         "and length-matched random genomes")
+    ap.add_argument("--parents", default="deep", choices=["deep", "prescreened"],
+                    help="damage mode: which genomes are the parents")
     ap.add_argument("--compete-over", default="{}",
                     help="extra JSON overrides for the competition runs only (not evolution)")
     ap.add_argument("--only", help="comma-separated set labels to run")
@@ -90,8 +114,19 @@ def main() -> None:
     cfg = load_config(args.config, over)
     rand = genome.random_genomes(args.n, cfg.genome_len, cfg.alphabet, cfg.init.genome_len,
                                  torch.Generator().manual_seed(7), exclude=cfg.ribosome.stop_token)
-    deep = evolve_deep(args.config, over, 4096, 128, args.n)
-    if args.mode == "damage":
+    stop = cfg.ribosome.stop_token
+    if args.mode == "damage" and args.parents == "prescreened":
+        deep = prescreen(args.config, over, args.n)
+        print(f"prescreened parents: mean length {(deep != 0).sum(1).float().mean():.1f}")
+    else:
+        deep = evolve_deep(args.config, over, 4096, 128, args.n)
+    if args.mode == "controls":
+        gen = torch.Generator().manual_seed(5)
+        sets = [("layout-matched random vs parents", layout_matched(deep, cfg.alphabet, gen, stop), deep),
+                ("length-matched random vs parents", length_matched(deep, cfg.alphabet, gen, stop), deep),
+                ("32-token random vs parents", rand, deep),
+                ("copies vs parents (null)", deep.clone(), deep)]
+    elif args.mode == "damage":
         from experiments.competition import flip, regions
         gen = torch.Generator().manual_seed(0)
         anywhere = regions(deep, cfg.ribosome.stop_token)["any"]
@@ -123,7 +158,7 @@ def main() -> None:
           f"(0.5 = no advantage)")
     for lab, _, _ in sets:
         v = torch.tensor([r["curve"][-1] for r in res if r["label"] == lab])
-        print(f"  {lab:26s} {v.mean():.3f} ± {v.std() / len(v) ** .5:.3f}   "
+        print(f"  {lab:34s} {v.mean():.3f} ± {v.std() / len(v) ** .5:.3f}   "
               f"per seed {' '.join(f'{x:.2f}' for x in v.tolist())}")
     if args.json:
         with open(args.json, "w") as f:
