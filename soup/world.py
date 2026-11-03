@@ -79,6 +79,9 @@ class World:
         self.state = torch.zeros(cn.state_ch, H, W, device=dev)
         self.morph = torch.zeros(cn.morph_ch, H, W, device=dev)
         self.energy = torch.zeros(H, W, device=dev)
+        # optional walls (e.g. competition arenas): nothing can be born into a barrier
+        # cell, and morphogens don't cross it
+        self.barrier: torch.Tensor | None = None
 
         fc = cfg.fields
         fgen = torch.Generator().manual_seed(cfg.seed + 2)
@@ -230,6 +233,8 @@ class World:
         spore_thr = ec.spore_min + ec.spore_span * tr[:, SPORE_THRESHOLD]
         prio = torch.randperm(N, generator=self.gen, device=self.device)
         empty_t = tg < 0
+        if self.barrier is not None:
+            empty_t = empty_t & ~self.barrier.view(-1)[tgt]
 
         # grow and spore compete for the same empty targets
         want_birth = (((action == GROW) & (E > ec.grow_threshold))
@@ -334,6 +339,8 @@ class World:
         lap = (torch.roll(m, 1, 1) + torch.roll(m, -1, 1) + torch.roll(m, 1, 2)
                + torch.roll(m, -1, 2) - 4 * m)
         self.morph = (m + dc.morph_diffuse * lap) * (1 - dc.morph_decay)
+        if self.barrier is not None:
+            self.morph = self.morph * ~self.barrier
 
     # ------------------------------------------------------------------ control
     def _randn(self, *shape: int) -> torch.Tensor:

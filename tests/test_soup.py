@@ -249,6 +249,38 @@ def test_fid_power_reduces_damage():
     assert flips(3.0) < 0.5 * flips(1.0)
 
 
+def test_barrier_contains_growth():
+    w = World(small_cfg(grid=[32, 32], init={"founders": 1, "genome_len": 24}))
+    wall = torch.zeros(32, 32, dtype=torch.bool)
+    wall[:, 16] = True
+    wall[:, 0] = True                                # torus: wall both seams
+    w.barrier = wall
+    w.seed_founders(positions=torch.tensor([8 * 32 + 8]))
+    w.run(120)
+    occ = w.gid >= 0
+    assert occ[:, 1:16].sum() > 1                    # grew on its side
+    assert not occ[:, 17:].any() and not occ[wall].any()
+
+
+def test_competition_helpers():
+    from experiments.competition import arena_layout, compete, flip, regions
+    barrier, origins = arena_layout(64, 64, 32)
+    assert len(origins) == 4 and barrier[0].all() and barrier[:, 32].all()
+    g = torch.tensor([[1, 2, 15, 3, 4, 0], [1, 2, 3, 4, 5, 6]], dtype=torch.uint8)
+    reg = regions(g, 15)
+    assert reg["expressed"][0].tolist() == [True, True, False, False, False, False]
+    assert reg["stop"][0].tolist() == [False, False, True, False, False, False]
+    assert reg["junk"][0].tolist() == [False, False, False, True, True, False]
+    assert not reg["stop"][1].any() and reg["expressed"][1].all()
+    m, ok = flip(g, 1, reg["junk"], 16, torch.Generator().manual_seed(0))
+    assert ok.tolist() == [True, False]
+    assert (m[0, :3] == g[0, :3]).all() and (m[0] != g[0]).sum() == 1
+    # identical competitors: shares are defined and in [0, 1]
+    par = genome.random_genomes(2, 64, 16, 24, torch.Generator().manual_seed(1))
+    s = compete({"genome_slots": 256}, None, par, par.clone(), 24, 64, seed=3)
+    assert s.shape == (2,) and ((s >= 0) & (s <= 1) | s.isnan()).all()
+
+
 def test_slots_freed_when_empty():
     w = World(small_cfg())
     w.seed_founders()
